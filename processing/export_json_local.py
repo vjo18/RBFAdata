@@ -3,6 +3,7 @@ from pathlib import Path
 import pandas as pd
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 import os
+import shutil
 
 from build_player_stats import (
     compute_rapm_from_logs,
@@ -226,6 +227,15 @@ def export_homeaway_all(xfile: str, dst: Path):
             else: o["V"] += 1
 
     _minidump(out, dst)
+
+
+def export_data_team_csv(dst: Path):
+    """Kopieer de ruwe teamkalender naar public/data voor frontend simulaties."""
+    src = Path(LOCAL_MAP[GID_DATA_TEAM])
+    if not src.exists():
+        raise FileNotFoundError(f"Bronbestand ontbreekt: {src}")
+    shutil.copyfile(src, dst)
+
 
 # ===================== LEAGUE STATS uit TEAM STATS ==========================
 
@@ -1134,9 +1144,11 @@ def main():
     export_points_series(x, od / "team_points.json")
     export_elo_series(x, od / "team_elo.json")
     export_rapm_segments_all(x, od / "team_rapm_segments.json")
+    export_data_team_csv(od / "data_team.csv")
     print(
         "OK → team_stats, h2h, homeaway, event_bins, first_scorer, "
-        "halftime_fulltime, player_stats, team_points, team_elo, team_rapm_segments"
+        "halftime_fulltime, player_stats, team_points, team_elo, "
+        "team_rapm_segments, data_team.csv"
     )
 
 

@@ -15,6 +15,8 @@ import {
 const DEFAULT_TEAM = "K. VC Ardooie A";
 const BINS = ["0-14","15-30","31-45","46-59","60-75","76-90"];
 const fmt = (v) => (v === 0 || Number.isFinite(v)) ? v : "—";
+const MC_RUNS = 100000;
+const TOP_N = 5;
 
 const median = (values) => {
   const arr = (values || [])
@@ -27,6 +29,49 @@ const median = (values) => {
   return arr.length % 2
     ? arr[mid]
     : (arr[mid - 1] + arr[mid]) / 2;
+};
+
+const parseCsvLine = (line) => {
+  const out = [];
+  let cur = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        cur += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch === "," && !inQuotes) {
+      out.push(cur);
+      cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  out.push(cur);
+  return out;
+};
+
+const parseCsv = (text) => {
+  const lines = String(text || "")
+    .split(/\r?\n/)
+    .filter((l) => l.trim().length > 0);
+
+  if (!lines.length) return [];
+  const headers = parseCsvLine(lines[0]);
+
+  return lines.slice(1).map((line) => {
+    const vals = parseCsvLine(line);
+    const row = {};
+    headers.forEach((h, i) => {
+      row[h] = vals[i] ?? "";
+    });
+    return row;
+  });
 };
 
 
@@ -178,6 +223,40 @@ const BarListChart = ({ title, rows, selected, fixedMaxAbs, leftLabel, rightLabe
     </div>
   );
 };
+
+const ProbabilityBars = ({ title, rows, selected, fillClass = "bg-emerald-500", footer }) => (
+  <div className="rounded-2xl bg-white shadow-sm ring-1 ring-black/5 overflow-hidden">
+    <div className="px-4 py-3 border-b border-gray-100">
+      <h3 className="text-lg font-semibold">{title}</h3>
+    </div>
+    <div className="p-4">
+      <ul className="space-y-2">
+        {rows.map((row, i) => {
+          const p = Math.max(0, Math.min(1, Number(row.probability) || 0));
+          return (
+            <li key={row.team} className={`rounded-md ${row.team === selected ? "bg-amber-50" : ""}`}>
+              <div className="flex items-center gap-3 px-2 py-1">
+                <div className="w-56 shrink-0 pr-2">
+                  <div className="flex items-center gap-2 justify-end text-sm">
+                    <span className="w-6 text-gray-500 text-right">{i + 1}</span>
+                    <span className="truncate text-right" title={row.team}>{row.team}</span>
+                  </div>
+                </div>
+                <div className="h-3 flex-1 rounded-sm bg-slate-200 overflow-hidden">
+                  <div className={`h-3 ${fillClass}`} style={{ width: `${(p * 100).toFixed(1)}%` }} aria-hidden />
+                </div>
+                <div className="w-14 shrink-0 text-right text-xs font-medium text-gray-700">
+                  {(p * 100).toFixed(1)}%
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      {footer && <p className="text-xs text-gray-400 mt-3">{footer}</p>}
+    </div>
+  </div>
+);
 
 /* ------------------ NIEUW: Team RAPM boxplots ------------------ */
 const TeamRapmBoxplots = ({ dataRapm, dataXppm, selectedTeam, minMinutes }) => {
@@ -1942,6 +2021,7 @@ export default function App() {
   const [firstScorer, setFirstScorer] = useState(null);
   const [htFt, setHtFt] = useState(null);
   const [rapmSegments, setRapmSegments] = useState(null);
+  const [calendarRows, setCalendarRows] = useState([]);
 
 
 
@@ -1949,7 +2029,7 @@ export default function App() {
     let alive = true;
     (async () => {
       const [
-        ts, h, ha, eb, fs, hf, ps, tp, te, rs,
+        ts, h, ha, eb, fs, hf, ps, tp, te, rs, calendarCsv,
       ] = await Promise.all([
         fetch("data/team_stats.json").then(r => r.json()),
         fetch("data/h2h.json").then(r => r.json()),
@@ -1961,6 +2041,7 @@ export default function App() {
         fetch("data/team_points.json").then(r => r.json()),
         fetch("data/team_elo.json").then(r => r.json()),
         fetch("data/team_rapm_segments.json").then(r => r.json()),
+        fetch("data/data_team.csv").then(r => r.text()),
       ]);
 
       if (!alive) return;
@@ -1974,6 +2055,7 @@ export default function App() {
       setTeamPoints(tp);
       setEloMap(te);
       setRapmSegments(rs);
+      setCalendarRows(parseCsv(calendarCsv));
     })();
     return () => { alive = false; };
   }, []);
@@ -2203,6 +2285,81 @@ const timingScatterData = useMemo(() => {
     [teamStats]
   );
 
+  const titleAndTop5Odds = useMemo(() => {
+    const teamNames = (teamStats || []).map((t) => t.Team).filter(Boolean);
+    if (!teamNames.length) return { rowsTitle: [], rowsTop5: [], remaining: 0 };
+
+    const pointsBase = Object.fromEntries(
+      teamNames.map((name) => {
+        const rec = (teamStats || []).find((t) => t.Team === name);
+        return [name, Number(rec?.Points ?? 0) || 0];
+      })
+    );
+
+    const eloNow = Object.fromEntries(
+      teamNames.map((name) => {
+        const rec = (teamStats || []).find((t) => t.Team === name);
+        return [name, Number(rec?.ELO ?? 1500) || 1500];
+      })
+    );
+
+    const remainingFixtures = (calendarRows || []).filter((r) => {
+      const hs = String(r.homeScore ?? "").trim();
+      const as = String(r.awayScore ?? "").trim();
+      return hs === "" && as === "" && teamNames.includes(r.homeTeam) && teamNames.includes(r.awayTeam);
+    });
+
+    const counts = Object.fromEntries(teamNames.map((name) => [name, { title: 0, top5: 0 }]));
+
+    for (let run = 0; run < MC_RUNS; run += 1) {
+      const points = { ...pointsBase };
+
+      for (let i = 0; i < remainingFixtures.length; i += 1) {
+        const fx = remainingFixtures[i];
+        const home = fx.homeTeam;
+        const away = fx.awayTeam;
+        const dElo = (eloNow[home] ?? 1500) - (eloNow[away] ?? 1500);
+
+        const E = 1 / (1 + 10 ** ((-dElo) / 400));
+        const pDraw = 0.30 * Math.exp(-Math.abs(dElo) / 400);
+        const pWin = (1 - pDraw) * E;
+
+        const u = Math.random();
+        if (u < pDraw) {
+          points[home] += 1;
+          points[away] += 1;
+        } else if (u < pDraw + pWin) {
+          points[home] += 3;
+        } else {
+          points[away] += 3;
+        }
+      }
+
+      const ranking = [...teamNames].sort((a, b) => {
+        const dPts = (points[b] ?? 0) - (points[a] ?? 0);
+        if (dPts !== 0) return dPts;
+        const dElo = (eloNow[b] ?? 0) - (eloNow[a] ?? 0);
+        if (dElo !== 0) return dElo;
+        return a.localeCompare(b);
+      });
+
+      if (ranking[0]) counts[ranking[0]].title += 1;
+      for (let i = 0; i < Math.min(TOP_N, ranking.length); i += 1) {
+        counts[ranking[i]].top5 += 1;
+      }
+    }
+
+    const rowsTitle = teamNames
+      .map((name) => ({ team: name, probability: counts[name].title / MC_RUNS }))
+      .sort((a, b) => (b.probability - a.probability) || a.team.localeCompare(b.team));
+
+    const rowsTop5 = teamNames
+      .map((name) => ({ team: name, probability: counts[name].top5 / MC_RUNS }))
+      .sort((a, b) => (b.probability - a.probability) || a.team.localeCompare(b.team));
+
+    return { rowsTitle, rowsTop5, remaining: remainingFixtures.length };
+  }, [calendarRows, teamStats]);
+
 // bv. 40% van max speelminuten
 const RAPM_MIN_MINUTES_RATIO = 0.4;
 
@@ -2211,7 +2368,7 @@ const minMinutesForRapm = useMemo(() => {
 
   let maxMinutes = 0;
 
-  for (const [teamName, arr] of Object.entries(playerStats)) {
+  for (const [_teamName, arr] of Object.entries(playerStats)) {
     for (const p of arr || []) {
 
       const mins = Number(p.Speelminuten ?? p["Minutes"] ?? 0);
@@ -2372,6 +2529,24 @@ const teamXppmBoxData = useMemo(() => {
   </div>
 </section>
 
+<section className="mb-8">
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <ProbabilityBars
+      title="Titelkans op basis van ELO"
+      rows={titleAndTop5Odds.rowsTitle}
+      selected={team}
+      fillClass="bg-sky-500"
+      footer={`Monte Carlo (${MC_RUNS.toLocaleString("nl-BE")} runs, ${titleAndTop5Odds.remaining} resterende matchen)`}
+    />
+    <ProbabilityBars
+      title="Top-5 kans"
+      rows={titleAndTop5Odds.rowsTop5}
+      selected={team}
+      fillClass="bg-emerald-500"
+    />
+  </div>
+</section>
+
 {/* Rij 2: ELO-ranking + RAPM-teamsterkte */}
 <section className="mb-8">
   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2386,7 +2561,6 @@ const teamXppmBoxData = useMemo(() => {
 
   </div>
 </section>
-
 
 {/* League-level timing scatter */}
 <section className="mb-8">
