@@ -35,12 +35,6 @@ GID_DATA_TEAM_PREV = ""            # laat leeg als je dit niet gebruikt
 GID_DATA_TEAM_24_25 = ""  # tab: Data Team 24_25 (vorig seizoen)
 
 
-ALLOWED = [
-    "K. Eendr. Wervik A","K.S.C. Wielsbeke","K.R.C. Waregem A","Zwevegem Sport",
-    "K. FC Marke A","K. RC Bissegem","S.V. Wevelgem City A","FC Sp. Heestert A",
-    "Club Roeselare","K. WS Oudenburg","K. VC Ardooie A","KFC Aalbeke Sport A",
-    "K. SV Moorsele A","K. FC Varsenare A","K. FC Heist A","K. SV Bredene A",
-]
 
 SEP = (",", ":")  # minified JSON
 
@@ -71,13 +65,34 @@ def _read_csv(gid: str | int, usecols=None):
 
 
 
+
+
+def _load_allowed_teams_from_teamstats() -> list[str]:
+    """
+    Lees alle unieke teams uit team_stats.csv (kolom 'Team')
+    en gebruik die als ALLOWED.
+    """
+    ts = _read_csv(GID_TEAM_STATS, usecols=["Team"])
+    teams = (
+        ts["Team"]
+        .astype(str)
+        .str.strip()
+        .replace("", pd.NA)
+        .dropna()
+        .unique()
+        .tolist()
+    )
+    teams.sort()
+    return teams
+
+ALLOWED: list[str] = _load_allowed_teams_from_teamstats()
+
+
 # ============================== TEAM STATS ==================================
 
 def export_team_stats(xfile: str, dst: Path):
     df = _read_csv(GID_TEAM_STATS)
 
-    # Enkel de ploegen die mogen
-    df = df[df["Team"].isin(ALLOWED)].copy()
 
     # Hernoem kolommen naar wat de app verwacht
     rename_map = {
@@ -162,12 +177,12 @@ def export_h2h_all(xfile: str, dst: Path):
     # Parseer datum meteen in dag/maand volgorde voor correcte sortering/formattering
     dt["date"] = pd.to_datetime(dt["date"], errors="coerce", dayfirst=True)
 
-
+    teams = sorted(set(dt["homeTeam"]).union(dt["awayTeam"]))
     data = {}
-    for team in ALLOWED:
+    for team in teams:
         sub = dt[(dt.homeTeam == team) | (dt.awayTeam == team)]
         h2h = {}
-        for opp in ALLOWED:
+        for opp in teams:
             if opp == team:
                 h2h[opp] = {"home": {"text": None, "res": None}, "away": {"text": None, "res": None}}
                 continue
@@ -183,18 +198,17 @@ def export_h2h_all(xfile: str, dst: Path):
 
     _minidump(data, dst)
 
-# ============================== HOME / AWAY =================================
-
 def export_homeaway_all(xfile: str, dst: Path):
     dt = _read_csv(GID_DATA_TEAM)
     played = dt[pd.notna(dt.homeScore) & pd.notna(dt.awayScore)].copy()
     played["homeScore"] = pd.to_numeric(played["homeScore"], errors="coerce").astype(int)
     played["awayScore"] = pd.to_numeric(played["awayScore"], errors="coerce").astype(int)
 
+    teams = sorted(set(played["homeTeam"]).union(played["awayTeam"]))
     out = {t: {
         "home": {"matches": 0, "W": 0, "G": 0, "V": 0, "points": 0, "GF": 0, "GA": 0},
         "away": {"matches": 0, "W": 0, "G": 0, "V": 0, "points": 0, "GF": 0, "GA": 0}
-    } for t in ALLOWED}
+    } for t in teams}
 
     for _, r in played.iterrows():
         h, a, hs, as_ = r.homeTeam, r.awayTeam, int(r.homeScore), int(r.awayScore)
