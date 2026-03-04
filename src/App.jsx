@@ -293,7 +293,7 @@ const PositionDistributionCard = ({ team, rows, totalRuns }) => {
 const RemainingProgramCard = ({ team, fixtures }) => (
   <div className="rounded-2xl bg-white shadow-sm ring-1 ring-black/5 overflow-hidden h-full">
     <div className="px-4 py-3 border-b border-gray-100">
-      <h3 className="text-lg font-semibold">Resterend programma — verwachte kansen (komende 5 wedstrijden) ({team})</h3>
+      <h3 className="text-lg font-semibold">Programma komende 5 wedstrijden — verwachte kansen ({team})</h3>
     </div>
 
     <div className="overflow-x-auto">
