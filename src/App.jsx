@@ -345,7 +345,7 @@ const TeamPointsVsExpectedCard = ({ team, rows }) => {
   const chartRows = rows || [];
   const maxY = Math.max(
     3,
-    ...chartRows.flatMap((r) => [Number(r.points), Number(r.xPts)]).filter((v) => Number.isFinite(v))
+    ...chartRows.flatMap((r) => [Number(r.points), Number(r.projectedPoints), Number(r.xPts)]).filter((v) => Number.isFinite(v))
   );
 
   return (
@@ -362,8 +362,13 @@ const TeamPointsVsExpectedCard = ({ team, rows }) => {
             <YAxis domain={[0, Math.ceil(maxY / 3) * 3]} />
             <Tooltip
               formatter={(value, key) => {
-                if (!Number.isFinite(Number(value))) return ["—", key === "xPts" ? "xPts" : "Punten"];
-                return [Number(value).toFixed(2), key === "xPts" ? "xPts" : "Punten"];
+                const label = key === "xPts"
+                  ? "xPts"
+                  : key === "projectedPoints"
+                  ? "Geprojecteerde finale punten"
+                  : "Punten";
+                if (!Number.isFinite(Number(value))) return ["—", label];
+                return [Number(value).toFixed(2), label];
               }}
             />
             <Legend />
@@ -378,6 +383,16 @@ const TeamPointsVsExpectedCard = ({ team, rows }) => {
             />
             <Line
               type="monotone"
+              dataKey="projectedPoints"
+              name="Geprojecteerde finale punten"
+              stroke="#0ea5e9"
+              strokeDasharray="5 5"
+              strokeWidth={2}
+              dot={false}
+              connectNulls={true}
+            />
+            <Line
+              type="monotone"
               dataKey="xPts"
               name="xPts"
               stroke="#6b7280"
@@ -389,7 +404,7 @@ const TeamPointsVsExpectedCard = ({ team, rows }) => {
         </ResponsiveContainer>
       </div>
       <p className="px-4 pb-4 text-xs text-gray-400">
-        xPts: historisch op basis van expected score (3 × expected score), met extrapolatie over de resterende wedstrijden via ELO-kansen.
+        xPts: historisch op basis van expected score (3 × expected score), met extrapolatie over de resterende wedstrijden via ELO-kansen. Geprojecteerde finale punten = actuele punten + verwachte punten over resterende wedstrijden.
       </p>
     </div>
   );
@@ -2675,6 +2690,7 @@ const timingScatterData = useMemo(() => {
     const teamFixtures = [...playedFixtures, ...unplayedFixtures];
 
     let cumPoints = 0;
+    let cumProjectedPoints = 0;
     let cumXPts = 0;
 
     return teamFixtures.map((fx, idx) => {
@@ -2690,6 +2706,7 @@ const timingScatterData = useMemo(() => {
           if ((isHome && hs > as) || (!isHome && as > hs)) cumPoints += 3;
           else if (hs === as) cumPoints += 1;
         }
+        cumProjectedPoints = cumPoints;
 
         const expectedScore = Number(isHome ? fx.expected_home : fx.expected_away);
         if (Number.isFinite(expectedScore)) {
@@ -2701,12 +2718,14 @@ const timingScatterData = useMemo(() => {
         const E = 1 / (1 + 10 ** ((-dElo) / 400));
         const pDraw = 0.30 * Math.exp(-Math.abs(dElo) / 400);
         const pWin = (1 - pDraw) * E;
+        cumProjectedPoints += (3 * pWin) + pDraw;
         cumXPts += (3 * pWin) + pDraw;
       }
 
       return {
         round: idx + 1,
         points: idx < playedFixtures.length ? cumPoints : null,
+        projectedPoints: Number(cumProjectedPoints.toFixed(2)),
         xPts: Number(cumXPts.toFixed(2)),
       };
     });
