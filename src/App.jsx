@@ -408,10 +408,24 @@ const ProjectedXPtsStabilityCard = ({ team, rows, stableFromMatchday }) => (
           <XAxis dataKey="matchday" allowDecimals={false} />
           <YAxis />
           <Tooltip
-            formatter={(value) => [Number(value).toFixed(2), "Geprojecteerde finale xPts"]}
+            formatter={(value, key) => {
+              const label = key === "projectedFinalPoints"
+                ? "Geprojecteerde finale punten"
+                : "Geprojecteerde finale xPts";
+              return [Number(value).toFixed(2), label];
+            }}
             labelFormatter={(label) => `Na speeldag ${label}`}
           />
           <Legend />
+          <Line
+            type="monotone"
+            dataKey="projectedFinalPoints"
+            name="Geprojecteerde finale punten"
+            stroke="#0ea5e9"
+            strokeWidth={2}
+            strokeDasharray="5 5"
+            dot={false}
+          />
           <Line
             type="monotone"
             dataKey="projectedFinalXPts"
@@ -2731,10 +2745,32 @@ const timingScatterData = useMemo(() => {
 
     const rows = [];
     for (let step = 0; step <= playedCount; step += 1) {
+      const cumPlayedPoints = teamFixtures.slice(0, step).reduce((sum, fx) => {
+        const hs = Number(fx.homeScore);
+        const as = Number(fx.awayScore);
+        const isHome = fx.homeTeam === team;
+        if (!Number.isFinite(hs) || !Number.isFinite(as)) return sum;
+        if ((isHome && hs > as) || (!isHome && as > hs)) return sum + 3;
+        if (hs === as) return sum + 1;
+        return sum;
+      }, 0);
+
       const cumPlayedXPts = teamFixtures.slice(0, step).reduce((sum, fx) => {
         const isHome = fx.homeTeam === team;
         const expectedScore = Number(isHome ? fx.expected_home : fx.expected_away);
         return Number.isFinite(expectedScore) ? sum + (3 * expectedScore) : sum;
+      }, 0);
+
+      const projectedRemainingPoints = teamFixtures.slice(step).reduce((sum, fx) => {
+        const isHome = fx.homeTeam === team;
+        const oppTeam = isHome ? fx.awayTeam : fx.homeTeam;
+        const teamEloAtProjection = step === playedCount ? (eloNow[team] ?? 1500) : eloAtStep(team, step);
+        const oppEloAtProjection = step === playedCount ? (eloNow[oppTeam] ?? 1500) : eloAtStep(oppTeam, step);
+        const dElo = teamEloAtProjection - oppEloAtProjection;
+        const E = 1 / (1 + 10 ** ((-dElo) / 400));
+        const pDraw = 0.30 * Math.exp(-Math.abs(dElo) / 400);
+        const pWin = (1 - pDraw) * E;
+        return sum + (3 * pWin) + pDraw;
       }, 0);
 
       const projectedRemainingXPts = teamFixtures.slice(step).reduce((sum, fx) => {
@@ -2751,6 +2787,7 @@ const timingScatterData = useMemo(() => {
 
       rows.push({
         matchday: step,
+        projectedFinalPoints: Number((cumPlayedPoints + projectedRemainingPoints).toFixed(2)),
         projectedFinalXPts: Number((cumPlayedXPts + projectedRemainingXPts).toFixed(2)),
       });
     }
