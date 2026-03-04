@@ -258,6 +258,82 @@ const ProbabilityBars = ({ title, rows, selected, fillClass = "bg-emerald-500", 
   </div>
 );
 
+const PositionDistributionCard = ({ team, rows, totalRuns }) => {
+  const maxProb = Math.max(0.001, ...(rows || []).map((r) => Number(r.probability) || 0));
+
+  return (
+    <div className="rounded-2xl bg-white shadow-sm ring-1 ring-black/5 overflow-hidden h-full">
+      <div className="px-4 py-3 border-b border-gray-100">
+        <h3 className="text-lg font-semibold">Monte Carlo — eindpositie ({team})</h3>
+      </div>
+
+      <div className="p-4 space-y-2">
+        {(rows || []).map((row) => {
+          const p = Math.max(0, Math.min(1, Number(row.probability) || 0));
+          const width = `${((p / maxProb) * 100).toFixed(1)}%`;
+          return (
+            <div key={row.position} className="grid grid-cols-[2.2rem_1fr_3.2rem] gap-2 items-center">
+              <div className="text-xs text-gray-600 text-right font-medium">#{row.position}</div>
+              <div className="h-3 rounded-sm bg-slate-200 overflow-hidden">
+                <div className="h-3 bg-indigo-500" style={{ width }} aria-hidden />
+              </div>
+              <div className="text-xs text-gray-700 text-right font-medium">{(p * 100).toFixed(1)}%</div>
+            </div>
+          );
+        })}
+
+        {!rows?.length && <p className="text-sm text-gray-500">Geen simulatiegegevens beschikbaar.</p>}
+
+        <p className="pt-2 text-xs text-gray-400">{totalRuns.toLocaleString("nl-BE")} simulaties op basis van resterende kalender en huidige ELO.</p>
+      </div>
+    </div>
+  );
+};
+
+const RemainingProgramCard = ({ team, fixtures }) => (
+  <div className="rounded-2xl bg-white shadow-sm ring-1 ring-black/5 overflow-hidden h-full">
+    <div className="px-4 py-3 border-b border-gray-100">
+      <h3 className="text-lg font-semibold">Resterend programma — verwachte kansen (komende 5 wedstrijden) ({team})</h3>
+    </div>
+
+    <div className="overflow-x-auto">
+      <table className="min-w-full text-sm">
+        <thead className="bg-gray-50 text-gray-600">
+          <tr>
+            <th className="px-3 py-2 text-left">Match</th>
+            <th className="px-3 py-2 text-right">ΔELO</th>
+            <th className="px-3 py-2 text-right">W</th>
+            <th className="px-3 py-2 text-right">V</th>
+            <th className="px-3 py-2 text-right">G</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(fixtures || []).map((fx, i) => (
+            <tr key={`${fx.date}-${fx.homeTeam}-${fx.awayTeam}-${i}`} className="hover:bg-gray-50">
+              <td className="px-3 py-2 whitespace-nowrap">
+                <div className="font-medium">{fx.homeTeam} - {fx.awayTeam}</div>
+                <div className="text-xs text-gray-500">{fx.date || "Datum n.b."}</div>
+              </td>
+              <td className="px-3 py-2 text-right whitespace-nowrap">
+                <div>{fx.eloDiff >= 0 ? "+" : ""}{Math.round(fx.eloDiff)}</div>
+              </td>
+              <td className="px-3 py-2 text-right font-medium">{(fx.pWin * 100).toFixed(0)}%</td>
+              <td className="px-3 py-2 text-right font-medium">{(fx.pLose * 100).toFixed(0)}%</td>
+              <td className="px-3 py-2 text-right font-medium">{(fx.pDraw * 100).toFixed(0)}%</td>
+            </tr>
+          ))}
+          {!fixtures?.length && (
+            <tr>
+              <td colSpan={5} className="px-3 py-4 text-center text-gray-500">Geen resterende wedstrijden gevonden.</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  </div>
+);
+
+
 /* ------------------ NIEUW: Team RAPM boxplots ------------------ */
 const TeamRapmBoxplots = ({ dataRapm, dataXppm, selectedTeam, minMinutes }) => {
   const [metric, setMetric] = React.useState("RAPM"); // "RAPM" of "xPPM"
@@ -1047,8 +1123,10 @@ function FirstScorerCard({ teamName, rec }) {
             data={donutData}
             dataKey="value"
             nameKey="name"
-            innerRadius="60%"
-            outerRadius="100%"
+            cx="50%"
+            cy="50%"
+            innerRadius={42}
+            outerRadius={64}
             paddingAngle={3}
             startAngle={90}
             endAngle={450}
@@ -2360,6 +2438,104 @@ const timingScatterData = useMemo(() => {
     return { rowsTitle, rowsTop5, remaining: remainingFixtures.length };
   }, [calendarRows, teamStats]);
 
+  const selectedTeamOutlook = useMemo(() => {
+    const teamNames = (teamStats || []).map((t) => t.Team).filter(Boolean);
+    if (!team || !teamNames.includes(team)) {
+      return { positionRows: [], fixtures: [] };
+    }
+
+    const pointsBase = Object.fromEntries(
+      teamNames.map((name) => {
+        const rec = (teamStats || []).find((t) => t.Team === name);
+        return [name, Number(rec?.Points ?? 0) || 0];
+      })
+    );
+
+    const eloNow = Object.fromEntries(
+      teamNames.map((name) => {
+        const rec = (teamStats || []).find((t) => t.Team === name);
+        return [name, Number(rec?.ELO ?? 1500) || 1500];
+      })
+    );
+
+    const remainingFixtures = (calendarRows || []).filter((r) => {
+      const hs = String(r.homeScore ?? "").trim();
+      const as = String(r.awayScore ?? "").trim();
+      return hs === "" && as === "" && teamNames.includes(r.homeTeam) && teamNames.includes(r.awayTeam);
+    });
+
+    const positionCounts = Array.from({ length: teamNames.length }, () => 0);
+
+    for (let run = 0; run < MC_RUNS; run += 1) {
+      const points = { ...pointsBase };
+
+      for (let i = 0; i < remainingFixtures.length; i += 1) {
+        const fx = remainingFixtures[i];
+        const home = fx.homeTeam;
+        const away = fx.awayTeam;
+        const dElo = (eloNow[home] ?? 1500) - (eloNow[away] ?? 1500);
+
+        const E = 1 / (1 + 10 ** ((-dElo) / 400));
+        const pDraw = 0.30 * Math.exp(-Math.abs(dElo) / 400);
+        const pWin = (1 - pDraw) * E;
+
+        const u = Math.random();
+        if (u < pDraw) {
+          points[home] += 1;
+          points[away] += 1;
+        } else if (u < pDraw + pWin) {
+          points[home] += 3;
+        } else {
+          points[away] += 3;
+        }
+      }
+
+      const ranking = [...teamNames].sort((a, b) => {
+        const dPts = (points[b] ?? 0) - (points[a] ?? 0);
+        if (dPts !== 0) return dPts;
+        const dElo = (eloNow[b] ?? 0) - (eloNow[a] ?? 0);
+        if (dElo !== 0) return dElo;
+        return a.localeCompare(b);
+      });
+
+      const idx = ranking.indexOf(team);
+      if (idx >= 0) positionCounts[idx] += 1;
+    }
+
+    const positionRows = positionCounts.map((count, idx) => ({
+      position: idx + 1,
+      probability: count / MC_RUNS,
+    }));
+
+    const fixtures = remainingFixtures
+      .filter((fx) => fx.homeTeam === team || fx.awayTeam === team)
+      .slice(0, 5)
+      .map((fx) => {
+        const teamIsHome = fx.homeTeam === team;
+        const oppTeam = teamIsHome ? fx.awayTeam : fx.homeTeam;
+        const teamElo = Number(eloNow[team] ?? 1500);
+        const oppElo = Number(eloNow[oppTeam] ?? 1500);
+        const dElo = teamElo - oppElo;
+        const E = 1 / (1 + 10 ** ((-dElo) / 400));
+        const pDraw = 0.30 * Math.exp(-Math.abs(dElo) / 400);
+        const pWin = (1 - pDraw) * E;
+        const pLose = 1 - pDraw - pWin;
+
+        return {
+          ...fx,
+          teamElo,
+          oppElo,
+          eloDiff: teamElo - oppElo,
+          pWin,
+          pDraw,
+          pLose,
+          expPoints: (3 * pWin) + pDraw,
+        };
+      });
+
+    return { positionRows, fixtures };
+  }, [calendarRows, team, teamStats]);
+
 // bv. 40% van max speelminuten
 const RAPM_MIN_MINUTES_RATIO = 0.4;
 
@@ -2625,6 +2801,20 @@ const teamXppmBoxData = useMemo(() => {
             </label>
           </div>
           <EloChart data={eloSeries} showOpp={showOppElo} />
+        </section>
+
+        <section className="mb-10">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-stretch">
+            <PositionDistributionCard
+              team={team}
+              rows={selectedTeamOutlook.positionRows}
+              totalRuns={MC_RUNS}
+            />
+            <RemainingProgramCard
+              team={team}
+              fixtures={selectedTeamOutlook.fixtures}
+            />
+          </div>
         </section>
 
         {/* Filters voor beide spelerstabellen */}
