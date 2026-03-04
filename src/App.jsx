@@ -2703,6 +2703,10 @@ const timingScatterData = useMemo(() => {
       return { rows: [], stableFromMatchday: null };
     }
 
+    const eloNow = Object.fromEntries(
+      (teamStats || []).map((nameRow) => [nameRow.Team, Number(nameRow?.ELO ?? 1500) || 1500])
+    );
+
     const fixturesOrdered = [...calendarRows]
       .filter((r) => r.homeTeam === team || r.awayTeam === team)
       .sort((a, b) => {
@@ -2736,7 +2740,9 @@ const timingScatterData = useMemo(() => {
       const projectedRemainingXPts = teamFixtures.slice(step).reduce((sum, fx) => {
         const isHome = fx.homeTeam === team;
         const oppTeam = isHome ? fx.awayTeam : fx.homeTeam;
-        const dElo = eloAtStep(team, step) - eloAtStep(oppTeam, step);
+        const teamEloAtProjection = step === playedCount ? (eloNow[team] ?? 1500) : eloAtStep(team, step);
+        const oppEloAtProjection = step === playedCount ? (eloNow[oppTeam] ?? 1500) : eloAtStep(oppTeam, step);
+        const dElo = teamEloAtProjection - oppEloAtProjection;
         const E = 1 / (1 + 10 ** ((-dElo) / 400));
         const pDraw = 0.30 * Math.exp(-Math.abs(dElo) / 400);
         const pWin = (1 - pDraw) * E;
@@ -2761,7 +2767,7 @@ const timingScatterData = useMemo(() => {
     }
 
     return { rows, stableFromMatchday };
-  }, [calendarRows, eloMap, team]);
+  }, [calendarRows, eloMap, team, teamStats]);
 
 // bv. 40% van max speelminuten
 const RAPM_MIN_MINUTES_RATIO = 0.4;
