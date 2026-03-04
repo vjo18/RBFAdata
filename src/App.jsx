@@ -1882,6 +1882,39 @@ function PointsChart({ seriesCurrent, seriesPrev, showPrev }) {
     </div>
   );
 }
+function PointsVsXptsChart({ rows, team }) {
+  if (!rows?.length) return null;
+
+  return (
+    <div className="rounded-2xl p-4 bg-white shadow-sm ring-1 ring-black/5">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-lg font-semibold">Punten evolutie vs xPts ({team})</h3>
+      </div>
+      <div className="h-72">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={rows}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="R" />
+            <YAxis allowDecimals={false} domain={[0, 'auto']} />
+            <Tooltip
+              formatter={(value, name) => {
+                if (name === "xPts") return [Number(value).toFixed(2), name];
+                return [Number(value).toFixed(1), name];
+              }}
+            />
+            <Legend />
+            <Line type="monotone" dataKey="pts" name="Punten" strokeWidth={2} dot={false} stroke="#0284c7" />
+            <Line type="monotone" dataKey="xPts" name="xPts" stroke="#6B7280" strokeDasharray="5 5" strokeWidth={2} dot={false} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <p className="text-xs text-gray-400 mt-2">
+        xPts gebaseerd op ELO-verwachting per gespeelde wedstrijd (3 × expected score).
+      </p>
+    </div>
+  );
+}
+
 
 // ===== Leaderboards helpers =====
 function makeLeaderboards(rows = []) {
@@ -2184,6 +2217,34 @@ export default function App() {
   const curSeries = myPts?.current;
   const prevSeries = myPts?.prev;
   const prevAvailable = (prevSeries?.rounds?.length ?? 0) > 0;
+
+  const pointsVsXptsSeries = useMemo(() => {
+    const playedRows = (calendarRows || []).filter((r) => {
+      const hs = String(r.homeScore ?? "").trim();
+      const as = String(r.awayScore ?? "").trim();
+      return hs !== "" && as !== "" && (r.homeTeam === team || r.awayTeam === team);
+    });
+
+    let cumPts = 0;
+    let cumXPts = 0;
+
+    return playedRows.map((r, idx) => {
+      const isHome = r.homeTeam === team;
+      const result = Number(isHome ? r.result_home : r.result_away);
+      const expected = Number(isHome ? r.expected_home : r.expected_away);
+      const pts = Number.isFinite(result) ? 3 * result : 0;
+      const xPts = Number.isFinite(expected) ? 3 * expected : 0;
+
+      cumPts += pts;
+      cumXPts += xPts;
+
+      return {
+        R: idx + 1,
+        pts: Number(cumPts.toFixed(1)),
+        xPts: Number(cumXPts.toFixed(2)),
+      };
+    });
+  }, [calendarRows, team]);
 
   // filters: spelers / keepers (beide/geen mogelijk) — werkt voor beide tabellen
   const myPlayersFiltered = useMemo(()=>{
@@ -2815,6 +2876,10 @@ const teamXppmBoxData = useMemo(() => {
               fixtures={selectedTeamOutlook.fixtures}
             />
           </div>
+        </section>
+
+        <section className="mb-10">
+          <PointsVsXptsChart rows={pointsVsXptsSeries} team={team} />
         </section>
 
         {/* Filters voor beide spelerstabellen */}
