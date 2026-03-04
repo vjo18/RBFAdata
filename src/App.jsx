@@ -1909,7 +1909,7 @@ function PointsVsXptsChart({ rows, team }) {
         </ResponsiveContainer>
       </div>
       <p className="text-xs text-gray-400 mt-2">
-        xPts gebaseerd op ELO-verwachting per gespeelde wedstrijd (3 × expected score).
+        xPts: historisch op basis van matchverwachting (3 × expected score), met extrapolatie over alle resterende wedstrijden.
       </p>
     </div>
   );
@@ -2225,10 +2225,20 @@ export default function App() {
       return hs !== "" && as !== "" && (r.homeTeam === team || r.awayTeam === team);
     });
 
+    const remainingRows = (calendarRows || []).filter((r) => {
+      const hs = String(r.homeScore ?? "").trim();
+      const as = String(r.awayScore ?? "").trim();
+      return hs === "" && as === "" && (r.homeTeam === team || r.awayTeam === team);
+    });
+
+    const eloNow = Object.fromEntries(
+      (teamStats || []).map((t) => [t.Team, Number(t.ELO ?? 1500) || 1500])
+    );
+
     let cumPts = 0;
     let cumXPts = 0;
 
-    return playedRows.map((r, idx) => {
+    const rowsPlayed = playedRows.map((r, idx) => {
       const isHome = r.homeTeam === team;
       const result = Number(isHome ? r.result_home : r.result_away);
       const expected = Number(isHome ? r.expected_home : r.expected_away);
@@ -2244,7 +2254,28 @@ export default function App() {
         xPts: Number(cumXPts.toFixed(2)),
       };
     });
-  }, [calendarRows, team]);
+
+    const rowsProjected = remainingRows.map((r, idx) => {
+      const oppTeam = r.homeTeam === team ? r.awayTeam : r.homeTeam;
+      const teamElo = Number(eloNow[team] ?? 1500);
+      const oppElo = Number(eloNow[oppTeam] ?? 1500);
+      const dElo = teamElo - oppElo;
+      const E = 1 / (1 + 10 ** ((-dElo) / 400));
+      const pDraw = 0.30 * Math.exp(-Math.abs(dElo) / 400);
+      const pWin = (1 - pDraw) * E;
+      const xPts = (3 * pWin) + pDraw;
+
+      cumXPts += xPts;
+
+      return {
+        R: rowsPlayed.length + idx + 1,
+        pts: null,
+        xPts: Number(cumXPts.toFixed(2)),
+      };
+    });
+
+    return [...rowsPlayed, ...rowsProjected];
+  }, [calendarRows, team, teamStats]);
 
   // filters: spelers / keepers (beide/geen mogelijk) — werkt voor beide tabellen
   const myPlayersFiltered = useMemo(()=>{
