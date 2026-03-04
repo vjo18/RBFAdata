@@ -445,7 +445,8 @@ const ProjectedXPtsStabilityCard = ({ team, rows, stableFromMatchday }) => (
             type="monotone"
             dataKey="projectedFinalXPts"
             name="Geprojecteerde finale xPts"
-            stroke="#9333ea"
+            stroke="#6b7280"
+            strokeDasharray="5 5"
             strokeWidth={2}
             dot={false}
           />
