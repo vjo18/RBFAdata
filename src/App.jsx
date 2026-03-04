@@ -305,6 +305,7 @@ const RemainingProgramCard = ({ team, fixtures }) => (
             <th className="px-3 py-2 text-right">W</th>
             <th className="px-3 py-2 text-right">V</th>
             <th className="px-3 py-2 text-right">G</th>
+            <th className="px-3 py-2 text-right">xPts</th>
           </tr>
         </thead>
         <tbody>
@@ -320,16 +321,109 @@ const RemainingProgramCard = ({ team, fixtures }) => (
               <td className="px-3 py-2 text-right font-medium">{(fx.pWin * 100).toFixed(0)}%</td>
               <td className="px-3 py-2 text-right font-medium">{(fx.pLose * 100).toFixed(0)}%</td>
               <td className="px-3 py-2 text-right font-medium">{(fx.pDraw * 100).toFixed(0)}%</td>
+              <td className="px-3 py-2 text-right font-semibold text-sky-700">{fx.expPoints.toFixed(2)}</td>
             </tr>
           ))}
           {!fixtures?.length && (
             <tr>
-              <td colSpan={5} className="px-3 py-4 text-center text-gray-500">Geen resterende wedstrijden gevonden.</td>
+              <td colSpan={6} className="px-3 py-4 text-center text-gray-500">Geen resterende wedstrijden gevonden.</td>
             </tr>
           )}
         </tbody>
       </table>
     </div>
+  </div>
+);
+
+const TeamPointsVsExpectedCard = ({ team, rows }) => {
+  const chartRows = rows || [];
+  const maxY = Math.max(
+    3,
+    ...chartRows.flatMap((r) => [Number(r.points), Number(r.xPts)]).filter((v) => Number.isFinite(v))
+  );
+
+  return (
+    <div className="rounded-2xl bg-white shadow-sm ring-1 ring-black/5 overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-100">
+        <h3 className="text-lg font-semibold">Punten evolutie vs xPts ({team})</h3>
+      </div>
+
+      <div className="h-72 p-3">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={chartRows} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="round" allowDecimals={false} />
+            <YAxis domain={[0, Math.ceil(maxY / 3) * 3]} />
+            <Tooltip
+              formatter={(value, key) => {
+                if (!Number.isFinite(Number(value))) return ["—", key === "xPts" ? "xPts" : "Punten"];
+                return [Number(value).toFixed(2), key === "xPts" ? "xPts" : "Punten"];
+              }}
+            />
+            <Legend />
+            <Line
+              type="monotone"
+              dataKey="points"
+              name="Punten"
+              stroke="#0284c7"
+              strokeWidth={2}
+              dot={false}
+              connectNulls={false}
+            />
+            <Line
+              type="monotone"
+              dataKey="xPts"
+              name="xPts"
+              stroke="#6b7280"
+              strokeDasharray="5 5"
+              strokeWidth={2}
+              dot={false}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <p className="px-4 pb-4 text-xs text-gray-400">
+        xPts: historisch op basis van expected score (3 × expected score), met extrapolatie over de resterende wedstrijden via ELO-kansen.
+      </p>
+    </div>
+  );
+};
+
+const ProjectedXPtsStabilityCard = ({ team, rows, stableFromMatchday }) => (
+  <div className="rounded-2xl bg-white shadow-sm ring-1 ring-black/5 overflow-hidden">
+    <div className="px-4 py-3 border-b border-gray-100">
+      <h3 className="text-lg font-semibold">Projectie finale xPts na elke speeldag ({team})</h3>
+    </div>
+
+    <div className="h-72 p-3">
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={rows || []} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis dataKey="matchday" allowDecimals={false} />
+          <YAxis />
+          <Tooltip
+            formatter={(value) => [Number(value).toFixed(2), "Geprojecteerde finale xPts"]}
+            labelFormatter={(label) => `Na speeldag ${label}`}
+          />
+          <Legend />
+          <Line
+            type="monotone"
+            dataKey="projectedFinalXPts"
+            name="Geprojecteerde finale xPts"
+            stroke="#9333ea"
+            strokeWidth={2}
+            dot={false}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+
+    <p className="px-4 pb-2 text-xs text-gray-500">
+      Stabiel vanaf speeldag: <span className="font-semibold">{stableFromMatchday ?? "nog niet stabiel"}</span>
+    </p>
+    <p className="px-4 pb-4 text-xs text-gray-400">
+      Definitie “stabiel”: wijziging ≤ 0,15 xPts gedurende 3 opeenvolgende speeldagen.
+    </p>
   </div>
 );
 
@@ -2536,6 +2630,129 @@ const timingScatterData = useMemo(() => {
     return { positionRows, fixtures };
   }, [calendarRows, team, teamStats]);
 
+  const teamPointsVsExpected = useMemo(() => {
+    if (!team) return [];
+
+    const teamNames = new Set((teamStats || []).map((t) => t.Team).filter(Boolean));
+    if (!teamNames.has(team)) return [];
+
+    const eloNow = Object.fromEntries(
+      (teamStats || []).map((nameRow) => [nameRow.Team, Number(nameRow?.ELO ?? 1500) || 1500])
+    );
+
+    const teamFixtures = (calendarRows || []).filter(
+      (r) => r.homeTeam === team || r.awayTeam === team
+    );
+
+    let cumPoints = 0;
+    let cumXPts = 0;
+
+    return teamFixtures.map((fx, idx) => {
+      const isHome = fx.homeTeam === team;
+      const hsRaw = String(fx.homeScore ?? "").trim();
+      const asRaw = String(fx.awayScore ?? "").trim();
+      const played = hsRaw !== "" && asRaw !== "";
+
+      if (played) {
+        const hs = Number(hsRaw);
+        const as = Number(asRaw);
+        if (Number.isFinite(hs) && Number.isFinite(as)) {
+          if ((isHome && hs > as) || (!isHome && as > hs)) cumPoints += 3;
+          else if (hs === as) cumPoints += 1;
+        }
+
+        const expectedScore = Number(isHome ? fx.expected_home : fx.expected_away);
+        if (Number.isFinite(expectedScore)) {
+          cumXPts += 3 * expectedScore;
+        }
+      } else {
+        const oppTeam = isHome ? fx.awayTeam : fx.homeTeam;
+        const dElo = (eloNow[team] ?? 1500) - (eloNow[oppTeam] ?? 1500);
+        const E = 1 / (1 + 10 ** ((-dElo) / 400));
+        const pDraw = 0.30 * Math.exp(-Math.abs(dElo) / 400);
+        const pWin = (1 - pDraw) * E;
+        cumXPts += (3 * pWin) + pDraw;
+      }
+
+      return {
+        round: idx + 1,
+        points: played ? cumPoints : null,
+        xPts: Number(cumXPts.toFixed(2)),
+      };
+    });
+  }, [calendarRows, team, teamStats]);
+
+  const projectedXPtsStability = useMemo(() => {
+    if (!team || !calendarRows?.length || !eloMap) {
+      return { rows: [], stableFromMatchday: null };
+    }
+
+    const parseDate = (value) => {
+      const [dd, mm, yyyy] = String(value || "").split("/").map((s) => Number(s));
+      if (!dd || !mm || !yyyy) return null;
+      return new Date(yyyy, mm - 1, dd).getTime();
+    };
+
+    const teamFixtures = [...calendarRows]
+      .filter((r) => r.homeTeam === team || r.awayTeam === team)
+      .sort((a, b) => {
+        const da = parseDate(a.date);
+        const db = parseDate(b.date);
+        if (da !== null && db !== null && da !== db) return da - db;
+        return String(a.date || "").localeCompare(String(b.date || ""));
+      });
+
+    const playedCount = teamFixtures.filter((fx) => {
+      const hs = String(fx.homeScore ?? "").trim();
+      const as = String(fx.awayScore ?? "").trim();
+      return hs !== "" && as !== "";
+    }).length;
+
+    const eloAtStep = (teamName, step) => {
+      const seq = eloMap?.[teamName]?.elo || [];
+      if (!seq.length) return 1500;
+      const idx = Math.max(0, Math.min(step, seq.length - 1));
+      return Number(seq[idx] ?? 1500) || 1500;
+    };
+
+    const rows = [];
+    for (let step = 0; step <= playedCount; step += 1) {
+      const cumPlayedXPts = teamFixtures.slice(0, step).reduce((sum, fx) => {
+        const isHome = fx.homeTeam === team;
+        const expectedScore = Number(isHome ? fx.expected_home : fx.expected_away);
+        return Number.isFinite(expectedScore) ? sum + (3 * expectedScore) : sum;
+      }, 0);
+
+      const projectedRemainingXPts = teamFixtures.slice(step).reduce((sum, fx) => {
+        const isHome = fx.homeTeam === team;
+        const oppTeam = isHome ? fx.awayTeam : fx.homeTeam;
+        const dElo = eloAtStep(team, step) - eloAtStep(oppTeam, step);
+        const E = 1 / (1 + 10 ** ((-dElo) / 400));
+        const pDraw = 0.30 * Math.exp(-Math.abs(dElo) / 400);
+        const pWin = (1 - pDraw) * E;
+        return sum + (3 * pWin) + pDraw;
+      }, 0);
+
+      rows.push({
+        matchday: step,
+        projectedFinalXPts: Number((cumPlayedXPts + projectedRemainingXPts).toFixed(2)),
+      });
+    }
+
+    let stableFromMatchday = null;
+    for (let i = 3; i < rows.length; i += 1) {
+      const d1 = Math.abs(rows[i].projectedFinalXPts - rows[i - 1].projectedFinalXPts);
+      const d2 = Math.abs(rows[i - 1].projectedFinalXPts - rows[i - 2].projectedFinalXPts);
+      const d3 = Math.abs(rows[i - 2].projectedFinalXPts - rows[i - 3].projectedFinalXPts);
+      if (d1 <= 0.15 && d2 <= 0.15 && d3 <= 0.15) {
+        stableFromMatchday = rows[i - 2].matchday;
+        break;
+      }
+    }
+
+    return { rows, stableFromMatchday };
+  }, [calendarRows, eloMap, team]);
+
 // bv. 40% van max speelminuten
 const RAPM_MIN_MINUTES_RATIO = 0.4;
 
@@ -2815,6 +3032,21 @@ const teamXppmBoxData = useMemo(() => {
               fixtures={selectedTeamOutlook.fixtures}
             />
           </div>
+        </section>
+
+        <section className="mb-10">
+          <TeamPointsVsExpectedCard
+            team={team}
+            rows={teamPointsVsExpected}
+          />
+        </section>
+
+        <section className="mb-10">
+          <ProjectedXPtsStabilityCard
+            team={team}
+            rows={projectedXPtsStability.rows}
+            stableFromMatchday={projectedXPtsStability.stableFromMatchday}
+          />
         </section>
 
         {/* Filters voor beide spelerstabellen */}
