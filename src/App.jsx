@@ -74,6 +74,12 @@ const parseCsv = (text) => {
   });
 };
 
+const parseDmyDate = (value) => {
+  const [dd, mm, yyyy] = String(value || "").split("/").map((s) => Number(s));
+  if (!dd || !mm || !yyyy) return null;
+  return new Date(yyyy, mm - 1, dd).getTime();
+};
+
 
 /* ------------------ UI helpers ------------------ */
 const ResultBadge = React.memo(({ value, res }) => {
@@ -2640,9 +2646,19 @@ const timingScatterData = useMemo(() => {
       (teamStats || []).map((nameRow) => [nameRow.Team, Number(nameRow?.ELO ?? 1500) || 1500])
     );
 
-    const teamFixtures = (calendarRows || []).filter(
-      (r) => r.homeTeam === team || r.awayTeam === team
-    );
+    const fixturesOrdered = [...(calendarRows || [])]
+      .filter((r) => r.homeTeam === team || r.awayTeam === team)
+      .sort((a, b) => {
+        const da = parseDmyDate(a.date);
+        const db = parseDmyDate(b.date);
+        if (da !== null && db !== null && da !== db) return da - db;
+        return String(a.date || "").localeCompare(String(b.date || ""));
+      });
+
+    const isPlayed = (fx) => String(fx.homeScore ?? "").trim() !== "" && String(fx.awayScore ?? "").trim() !== "";
+    const playedFixtures = fixturesOrdered.filter(isPlayed);
+    const unplayedFixtures = fixturesOrdered.filter((fx) => !isPlayed(fx));
+    const teamFixtures = [...playedFixtures, ...unplayedFixtures];
 
     let cumPoints = 0;
     let cumXPts = 0;
@@ -2676,7 +2692,7 @@ const timingScatterData = useMemo(() => {
 
       return {
         round: idx + 1,
-        points: played ? cumPoints : null,
+        points: idx < playedFixtures.length ? cumPoints : null,
         xPts: Number(cumXPts.toFixed(2)),
       };
     });
@@ -2687,26 +2703,20 @@ const timingScatterData = useMemo(() => {
       return { rows: [], stableFromMatchday: null };
     }
 
-    const parseDate = (value) => {
-      const [dd, mm, yyyy] = String(value || "").split("/").map((s) => Number(s));
-      if (!dd || !mm || !yyyy) return null;
-      return new Date(yyyy, mm - 1, dd).getTime();
-    };
-
-    const teamFixtures = [...calendarRows]
+    const fixturesOrdered = [...calendarRows]
       .filter((r) => r.homeTeam === team || r.awayTeam === team)
       .sort((a, b) => {
-        const da = parseDate(a.date);
-        const db = parseDate(b.date);
+        const da = parseDmyDate(a.date);
+        const db = parseDmyDate(b.date);
         if (da !== null && db !== null && da !== db) return da - db;
         return String(a.date || "").localeCompare(String(b.date || ""));
       });
 
-    const playedCount = teamFixtures.filter((fx) => {
-      const hs = String(fx.homeScore ?? "").trim();
-      const as = String(fx.awayScore ?? "").trim();
-      return hs !== "" && as !== "";
-    }).length;
+    const isPlayed = (fx) => String(fx.homeScore ?? "").trim() !== "" && String(fx.awayScore ?? "").trim() !== "";
+    const playedFixtures = fixturesOrdered.filter(isPlayed);
+    const unplayedFixtures = fixturesOrdered.filter((fx) => !isPlayed(fx));
+    const teamFixtures = [...playedFixtures, ...unplayedFixtures];
+    const playedCount = playedFixtures.length;
 
     const eloAtStep = (teamName, step) => {
       const seq = eloMap?.[teamName]?.elo || [];
