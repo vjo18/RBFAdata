@@ -264,6 +264,120 @@ const ProbabilityBars = ({ title, rows, selected, fillClass = "bg-emerald-500", 
   </div>
 );
 
+const SwapRankings = ({ data, selectedTeam }) => {
+  if (!data) return null;
+
+  const avgRows = data.avgSubsPerMatch || [];
+  const impactRows = data.goalDiffAfterSub || [];
+
+  const TableCard = ({ title, headers, rows, renderRow }) => (
+    <div className="rounded-2xl bg-white shadow-sm ring-1 ring-black/5 overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-100">
+        <h3 className="text-lg font-semibold">{title}</h3>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-sm">
+          <thead className="bg-gray-50 text-gray-600">
+            <tr>{headers.map((h) => <th key={h.key} className={h.className}>{h.label}</th>)}</tr>
+          </thead>
+          <tbody>{rows.map(renderRow)}</tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <TableCard
+        title="Ranglijst — gem. wissels per wedstrijd"
+        headers={[
+          { key: "rank", label: "#", className: "px-3 py-2 text-left w-10" },
+          { key: "team", label: "Team", className: "px-3 py-2 text-left" },
+          { key: "avg", label: "Gem. wissels", className: "px-3 py-2 text-right" },
+        ]}
+        rows={avgRows}
+        renderRow={(row, i) => (
+          <tr key={row.team} className={row.team === selectedTeam ? "bg-amber-50" : "hover:bg-gray-50"}>
+            <td className="px-3 py-2">{i + 1}</td>
+            <td className="px-3 py-2 font-medium whitespace-nowrap">{row.team}</td>
+            <td className="px-3 py-2 text-right">{Number(row.avgSubs).toFixed(2)}</td>
+          </tr>
+        )}
+      />
+
+      <TableCard
+        title="Ranglijst — doelsaldo na wissel (10' & 20')"
+        headers={[
+          { key: "rank", label: "#", className: "px-3 py-2 text-left w-10" },
+          { key: "team", label: "Team", className: "px-3 py-2 text-left" },
+          { key: "gd10", label: "GD +10'", className: "px-3 py-2 text-right" },
+          { key: "s10", label: "Standaard +10'", className: "px-3 py-2 text-right" },
+          { key: "d10", label: "Δ +10'", className: "px-3 py-2 text-right" },
+          { key: "gd20", label: "GD +20'", className: "px-3 py-2 text-right" },
+          { key: "s20", label: "Standaard +20'", className: "px-3 py-2 text-right" },
+          { key: "d20", label: "Δ +20'", className: "px-3 py-2 text-right" },
+        ]}
+        rows={impactRows}
+        renderRow={(row, i) => (
+          <tr key={row.team} className={row.team === selectedTeam ? "bg-amber-50" : "hover:bg-gray-50"}>
+            <td className="px-3 py-2">{i + 1}</td>
+            <td className="px-3 py-2 font-medium whitespace-nowrap">{row.team}</td>
+            <td className="px-3 py-2 text-right">{Number(row.gd10).toFixed(2)}</td>
+            <td className="px-3 py-2 text-right">{Number(row.standard10).toFixed(2)}</td>
+            <td className="px-3 py-2 text-right">{Number(row.delta10).toFixed(2)}</td>
+            <td className="px-3 py-2 text-right">{Number(row.gd20).toFixed(2)}</td>
+            <td className="px-3 py-2 text-right">{Number(row.standard20).toFixed(2)}</td>
+            <td className="px-3 py-2 text-right">{Number(row.delta20).toFixed(2)}</td>
+          </tr>
+        )}
+      />
+    </div>
+  );
+};
+
+const TeamSubstitutionMoments = ({ teamName, rows, league }) => {
+  if (!rows?.length) return null;
+
+  return (
+    <div className="rounded-2xl bg-white shadow-sm ring-1 ring-black/5 overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-100">
+        <h3 className="text-lg font-semibold">Wisselmomenten ({teamName})</h3>
+      </div>
+      <div className="p-4">
+        <p className="text-xs text-gray-500 mb-3">Paarse balk = teampercentage • roze lijn = competitiegemiddelde.</p>
+        <div className="space-y-3">
+          {rows.map((row) => {
+            const pct = Number(row.pct) || 0;
+            const leaguePct = Number(row.leaguePct) || 0;
+            return (
+              <div key={row.bucket}>
+                <div className="flex justify-between text-xs text-gray-600 mb-1">
+                  <span>{row.bucket}</span>
+                  <span>{pct.toFixed(1)}% ({row.count}) · Competitie: {leaguePct.toFixed(1)}%</span>
+                </div>
+                <div className="relative h-3 rounded bg-slate-200 overflow-hidden">
+                  <div className="h-3 bg-indigo-500" style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} />
+                  <div
+                    className="absolute top-[-1px] bottom-[-1px] w-[3px] bg-fuchsia-500 ring-1 ring-white z-10"
+                    style={{ left: `${Math.max(0, Math.min(100, leaguePct))}%`, transform: "translateX(-50%)" }}
+                  />
+                  <div
+                    className="absolute w-2 h-2 rounded-full bg-fuchsia-500 ring-1 ring-white z-10"
+                    style={{ left: `${Math.max(0, Math.min(100, leaguePct))}%`, top: "50%", transform: "translate(-50%, -50%)" }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {league?.totalSubs > 0 && (
+          <p className="text-xs text-gray-400 mt-3">Competitie-benchmark op basis van {league.totalSubs} wisselmomenten.</p>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const PositionDistributionCard = ({ team, rows, totalRuns }) => {
   const maxProb = Math.max(0.001, ...(rows || []).map((r) => Number(r.probability) || 0));
 
@@ -2041,7 +2155,7 @@ function makeLeaderboards(rows = []) {
   };
 }
 
-function Leaderboards({ data, selectedTeam }) {
+function Leaderboards({ data, selectedTeam, supersubs }) {
   if (!data) return null;
   const Box = ({ title, items }) => (
     <div className="rounded-2xl bg-white shadow-sm ring-1 ring-black/5 overflow-hidden">
@@ -2085,6 +2199,7 @@ function Leaderboards({ data, selectedTeam }) {
       <Box title="Top 10 — Dubbel geel"          items={data.doubleYellow} />
       <Box title="Top 10 — Rood"                 items={data.red} />
       <Box title="Top 10 — Clean sheets"         items={data.cleanSheets} />
+      <Box title="Supersub Top 10 — Goals (excl. penalties)" items={supersubs} />
     </div>
   );
 }
@@ -2230,6 +2345,8 @@ export default function App() {
   const [htFt, setHtFt] = useState(null);
   const [rapmSegments, setRapmSegments] = useState(null);
   const [calendarRows, setCalendarRows] = useState([]);
+  const [substitutionStats, setSubstitutionStats] = useState(null);
+  const [supersubsTop10, setSupersubsTop10] = useState([]);
 
 
 
@@ -2237,7 +2354,7 @@ export default function App() {
     let alive = true;
     (async () => {
       const [
-        ts, h, ha, eb, fs, hf, ps, tp, te, rs, calendarCsv,
+        ts, h, ha, eb, fs, hf, ps, tp, te, rs, calendarCsv, subs, supersubs,
       ] = await Promise.all([
         fetch("data/team_stats.json").then(r => r.json()),
         fetch("data/h2h.json").then(r => r.json()),
@@ -2250,6 +2367,8 @@ export default function App() {
         fetch("data/team_elo.json").then(r => r.json()),
         fetch("data/team_rapm_segments.json").then(r => r.json()),
         fetch("data/data_team.csv").then(r => r.text()),
+        fetch("data/team_substitutions.json").then(r => r.json()),
+        fetch("data/supersubs_top10.json").then(r => r.json()),
       ]);
 
       if (!alive) return;
@@ -2264,6 +2383,8 @@ export default function App() {
       setEloMap(te);
       setRapmSegments(rs);
       setCalendarRows(parseCsv(calendarCsv));
+      setSubstitutionStats(subs);
+      setSupersubsTop10(supersubs || []);
     })();
     return () => { alive = false; };
   }, []);
@@ -2310,6 +2431,7 @@ export default function App() {
   const myHtFt = htFt?.[team];
   const myPlayers = playerStats?.[team] ?? [];
   const myRapmSegments = rapmSegments?.[team] || null;
+  const mySubstitutionMoments = substitutionStats?.timingByTeam?.[team] || [];
   const myPts = teamPoints?.[team];
   const curSeries = myPts?.current;
   const prevSeries = myPts?.prev;
@@ -3013,6 +3135,10 @@ const teamXppmBoxData = useMemo(() => {
   </div>
 </section>
 
+<section className="mb-8">
+  <SwapRankings data={substitutionStats} selectedTeam={team} />
+</section>
+
 {/* Rij 2: ELO-ranking + RAPM-teamsterkte */}
 <section className="mb-8">
   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -3044,6 +3170,14 @@ const teamXppmBoxData = useMemo(() => {
 </div>
 </section>
         <section className="mb-10"><EventHeatmap rec={myEvent} /></section>
+
+        <section className="mb-10">
+          <TeamSubstitutionMoments
+            teamName={team}
+            rows={mySubstitutionMoments}
+            league={substitutionStats?.leagueTiming}
+          />
+        </section>
 
         <section className="mb-10">
   <FirstScorerCard teamName={team} rec={myFirstScorer} />
@@ -3182,7 +3316,7 @@ const teamXppmBoxData = useMemo(() => {
 
         <section className="mb-10">
           <h3 className="text-lg font-semibold mb-3">Top 10 — spelersstatistieken (alle ploegen)</h3>
-          <Leaderboards data={leaderboards} selectedTeam={team} />
+          <Leaderboards data={leaderboards} selectedTeam={team} supersubs={supersubsTop10} />
         </section>
 
       </div>

@@ -729,6 +729,181 @@ def export_halftime_fulltime_all(xfile: str, dst: Path):
     _minidump(out, dst)
 
 
+
+def export_substitution_stats_all(xfile: str, dst: Path):
+    dm = _read_csv(
+        GID_DATA_MATCHEVENT,
+        usecols=[
+            "matchurl",
+            "home_team",
+            "away_team",
+            "team",
+            "event",
+            "minute",
+            "home_team_goals",
+            "away_team_goals",
+        ],
+    )
+
+    def parse_minute(x):
+        if pd.isna(x):
+            return pd.NA
+        import re
+
+        m = re.match(r".*?(\d+)(?:\s*\+\s*(\d+))?.*", str(x))
+        if not m:
+            return pd.NA
+        v = int(m.group(1)) + (int(m.group(2)) if m.group(2) else 0)
+        return float(90 if v > 90 else (0 if v < 0 else v))
+
+    dm["mnum"] = dm["minute"].map(parse_minute)
+    dm["event_l"] = dm["event"].astype(str).str.lower().str.strip()
+
+    goal_events = {"goal", "penalty", "own goal"}
+
+    def team_gd(row, team_name: str) -> int:
+        scoring_team = str(row.get("team", ""))
+        return 1 if scoring_team == team_name else -1
+
+    per_team = {
+        t: {
+            "matches": set(),
+            "subs": 0,
+            "gd10_sum": 0.0,
+            "gd20_sum": 0.0,
+            "timing": {"0-60": 0, "61-75": 0, "76-90": 0},
+        }
+        for t in ALLOWED
+    }
+
+    league_timing = {"0-60": 0, "61-75": 0, "76-90": 0}
+
+    for match_id, grp in dm.groupby("matchurl"):
+        grp = grp.sort_values(["mnum", "event_l"], na_position="last").copy()
+        if grp.empty:
+            continue
+
+        home = str(grp.iloc[0]["home_team"])
+        away = str(grp.iloc[0]["away_team"])
+        for t in (home, away):
+            if t in per_team:
+                per_team[t]["matches"].add(match_id)
+
+        subs = grp[grp["event_l"] == "substitute in"].copy()
+        if subs.empty:
+            continue
+
+        goals = grp[grp["event_l"].isin(goal_events)].copy()
+
+        for _, sub in subs.iterrows():
+            team_name = str(sub["team"])
+            if team_name not in per_team:
+                continue
+            m = sub["mnum"]
+            if pd.isna(m):
+                continue
+
+            rec = per_team[team_name]
+            rec["subs"] += 1
+
+            if m <= 60:
+                key = "0-60"
+            elif m <= 75:
+                key = "61-75"
+            else:
+                key = "76-90"
+            rec["timing"][key] += 1
+            league_timing[key] += 1
+
+            g10 = goals[(goals["mnum"] > m) & (goals["mnum"] <= m + 10)]
+            g20 = goals[(goals["mnum"] > m) & (goals["mnum"] <= m + 20)]
+
+            rec["gd10_sum"] += float(sum(team_gd(r, team_name) for _, r in g10.iterrows()))
+            rec["gd20_sum"] += float(sum(team_gd(r, team_name) for _, r in g20.iterrows()))
+
+    avg_rows = []
+    impact_rows = []
+
+    for team_name, rec in per_team.items():
+        matches = len(rec["matches"])
+        subs = rec["subs"]
+        avg_subs = (subs / matches) if matches else 0.0
+        gd10 = (rec["gd10_sum"] / subs) if subs else 0.0
+        gd20 = (rec["gd20_sum"] / subs) if subs else 0.0
+
+        avg_rows.append({
+            "team": team_name,
+            "matches": matches,
+            "subs": subs,
+            "avgSubs": round(avg_subs, 2),
+        })
+        impact_rows.append({
+            "team": team_name,
+            "gd10": round(gd10, 2),
+            "gd20": round(gd20, 2),
+        })
+
+    avg_rows.sort(key=lambda r: (-r["avgSubs"], r["team"]))
+
+    team_stats = _read_csv(GID_TEAM_STATS)
+    if "Team" not in team_stats.columns:
+        team_stats = pd.DataFrame(columns=["Team"])
+
+    played_col = next((c for c in ["Played", "Matches"] if c in team_stats.columns), None)
+    gd_col = next((c for c in ["GD", "Goal Diff", "GoalDiff"] if c in team_stats.columns), None)
+
+    avg_gd_map = {}
+    if played_col and gd_col:
+        for _, row in team_stats.iterrows():
+            t = row.get("Team")
+            if t not in ALLOWED:
+                continue
+            played = pd.to_numeric(row.get(played_col), errors="coerce")
+            gd = pd.to_numeric(row.get(gd_col), errors="coerce")
+            if pd.notna(played) and played > 0 and pd.notna(gd):
+                avg_gd_map[str(t)] = float(gd) / float(played)
+
+    for r in impact_rows:
+        avg_match_gd = avg_gd_map.get(r["team"], 0.0)
+        standard10 = avg_match_gd * (10.0 / 90.0)
+        standard20 = avg_match_gd * (20.0 / 90.0)
+        r["standard10"] = round(standard10, 2)
+        r["standard20"] = round(standard20, 2)
+        r["delta10"] = round(r["gd10"] - standard10, 2)
+        r["delta20"] = round(r["gd20"] - standard20, 2)
+
+    impact_rows.sort(key=lambda r: (-r["delta20"], -r["delta10"], r["team"]))
+
+    total_league_subs = sum(league_timing.values())
+
+    timing_by_team = {}
+    for team_name, rec in per_team.items():
+        subs = rec["subs"]
+        timing_by_team[team_name] = []
+        for bucket in ["0-60", "61-75", "76-90"]:
+            c = rec["timing"][bucket]
+            pct = round((c / subs) * 100.0, 1) if subs else 0.0
+            lpct = round((league_timing[bucket] / total_league_subs) * 100.0, 1) if total_league_subs else 0.0
+            timing_by_team[team_name].append({
+                "bucket": bucket + " min",
+                "count": int(c),
+                "pct": pct,
+                "leaguePct": lpct,
+            })
+
+    out = {
+        "avgSubsPerMatch": avg_rows,
+        "goalDiffAfterSub": impact_rows,
+        "leagueTiming": {
+            "buckets": league_timing,
+            "totalSubs": int(total_league_subs),
+        },
+        "timingByTeam": timing_by_team,
+    }
+
+    _minidump(out, dst)
+
+
 # ============================ PLAYER STATS ==================================
 
 def export_player_stats_all(xfile: str, dst: Path):
@@ -1128,6 +1303,48 @@ def export_elo_series(xfile: str, out_file: Path):
 
     out_file.write_text(json.dumps(out, ensure_ascii=False, indent=2))
 
+
+def export_supersubs_top10(xfile: str, dst: Path):
+    pm = _read_csv(
+        GID_PLAYER_MATCHDATA,
+        usecols=["Player Name", "Team", "Substituted In", "Goals Scored", "Penalties Scored"],
+    )
+
+    pm = pm[pm["Team"].isin(ALLOWED)].copy()
+    pm["sub_flag"] = pm["Substituted In"].astype(str).str.lower().isin(["1", "true", "yes"])
+    pm["Goals Scored"] = pd.to_numeric(pm["Goals Scored"], errors="coerce").fillna(0)
+    pm["Penalties Scored"] = pd.to_numeric(pm["Penalties Scored"], errors="coerce").fillna(0)
+
+    as_sub = pm[pm["sub_flag"]].copy()
+    if as_sub.empty:
+        _minidump([], dst)
+        return
+
+    as_sub["supersub_goals"] = (as_sub["Goals Scored"] - as_sub["Penalties Scored"]).clip(lower=0)
+
+    agg = (
+        as_sub.groupby(["Player Name", "Team"], as_index=False)
+        .agg(
+            goals=("supersub_goals", "sum"),
+            subApps=("sub_flag", "sum"),
+        )
+    )
+
+    agg = agg[(agg["goals"] > 0) & (agg["subApps"] > 0)].copy()
+    agg = agg.sort_values(["goals", "subApps", "Player Name"], ascending=[False, False, True]).head(10)
+
+    out = [
+        {
+            "Speler": str(r["Player Name"]),
+            "Team": str(r["Team"]),
+            "val": f"{int(r['goals'])} ({int(r['subApps'])})",
+        }
+        for _, r in agg.iterrows()
+    ]
+
+    _minidump(out, dst)
+
+
 # ================================= CLI ======================================
 
 def main():
@@ -1144,11 +1361,13 @@ def main():
     export_points_series(x, od / "team_points.json")
     export_elo_series(x, od / "team_elo.json")
     export_rapm_segments_all(x, od / "team_rapm_segments.json")
+    export_substitution_stats_all(x, od / "team_substitutions.json")
+    export_supersubs_top10(x, od / "supersubs_top10.json")
     export_data_team_csv(od / "data_team.csv")
     print(
         "OK → team_stats, h2h, homeaway, event_bins, first_scorer, "
         "halftime_fulltime, player_stats, team_points, team_elo, "
-        "team_rapm_segments, data_team.csv"
+        "team_rapm_segments, team_substitutions, supersubs_top10, data_team.csv"
     )
 
 
