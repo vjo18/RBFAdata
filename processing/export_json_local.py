@@ -1128,6 +1128,229 @@ def export_elo_series(xfile: str, out_file: Path):
 
     out_file.write_text(json.dumps(out, ensure_ascii=False, indent=2))
 
+
+def export_substitution_insights(xfile: str, dst: Path):
+    """
+    Bouwt public/data/substitution_insights.json op basis van:
+    - data_raw/data_matchevent.csv
+    - data_raw/player_matchdata.csv
+    """
+    import re
+
+    me = _read_csv(GID_DATA_MATCHEVENT).copy()
+
+    required = ["matchurl", "home_team", "away_team", "event", "team", "minute"]
+    miss = [c for c in required if c not in me.columns]
+    if miss:
+        raise RuntimeError(f"Ontbrekende kolommen in data_matchevent.csv: {miss}")
+
+    def parse_minute(v):
+        if pd.isna(v):
+            return pd.NA
+        s = str(v).strip()
+        m = re.match(r"^(\d+)(?:\+(\d+))?$", s)
+        if m:
+            return int(m.group(1)) + int(m.group(2) or 0)
+        n = pd.to_numeric(s, errors="coerce")
+        return int(n) if pd.notna(n) else pd.NA
+
+    me["event_norm"] = me["event"].astype(str).str.strip().str.lower()
+    me["minute_num"] = me["minute"].apply(parse_minute)
+
+    # Teammatches + subs per match
+    team_matches = pd.concat([
+        me[["team", "matchurl"]].dropna(),
+        me[["home_team", "matchurl"]].rename(columns={"home_team": "team"}).dropna(),
+        me[["away_team", "matchurl"]].rename(columns={"away_team": "team"}).dropna(),
+    ], ignore_index=True).drop_duplicates()
+
+    matches_per_team = team_matches.groupby("team")["matchurl"].nunique()
+    sub_ins = me[me["event_norm"] == "substitute in"]
+    subs_per_team = sub_ins.groupby("team").size()
+
+    teams = sorted(set(team_matches["team"].astype(str).tolist()))
+
+    subs_per_match = []
+    for t in teams:
+        mp = int(matches_per_team.get(t, 0))
+        total_subs = int(subs_per_team.get(t, 0))
+        avg = (total_subs / mp) if mp else 0
+        subs_per_match.append({
+            "team": t,
+            "avgSubsPerMatch": round(float(avg), 3),
+            "totalSubs": total_subs,
+            "matches": mp,
+        })
+
+    subs_per_match.sort(key=lambda r: (-r["avgSubsPerMatch"], r["team"]))
+
+    # Doelsaldo per match (voor baseline)
+    goals = me[me["event_norm"].isin(["goal", "penalty", "own goal"])].copy()
+
+    def scoring_team(row):
+        if row["event_norm"] == "own goal":
+            return row["away_team"] if row["team"] == row["home_team"] else row["home_team"]
+        return row["team"]
+
+    if not goals.empty:
+        goals["scoring_team"] = goals.apply(scoring_team, axis=1)
+
+    team_goal_diff = {t: 0 for t in teams}
+    for _, r in goals.iterrows():
+        h = r["home_team"]
+        a = r["away_team"]
+        sct = r["scoring_team"]
+        if sct == h:
+            team_goal_diff[h] = team_goal_diff.get(h, 0) + 1
+            team_goal_diff[a] = team_goal_diff.get(a, 0) - 1
+        elif sct == a:
+            team_goal_diff[a] = team_goal_diff.get(a, 0) + 1
+            team_goal_diff[h] = team_goal_diff.get(h, 0) - 1
+
+    # Gem. doelsaldo na sub in vensters
+    windows = [10, 20]
+    sub_goal_diffs = {w: {t: [] for t in teams} for w in windows}
+
+    for matchurl, g in me.groupby("matchurl", dropna=True):
+        g = g.sort_values("minute_num", kind="stable")
+        g_goals = g[g["event_norm"].isin(["goal", "penalty", "own goal"])].copy()
+        g_subin = g[g["event_norm"] == "substitute in"].copy()
+
+        if g_subin.empty:
+            continue
+
+        for _, sr in g_subin.iterrows():
+            t = sr["team"]
+            if pd.isna(sr["minute_num"]) or t not in sub_goal_diffs[10]:
+                continue
+            m0 = int(sr["minute_num"])
+            opp = sr["away_team"] if t == sr["home_team"] else sr["home_team"]
+
+            for w in windows:
+                m1 = m0 + w
+                seg = g_goals[(g_goals["minute_num"] > m0) & (g_goals["minute_num"] <= m1)]
+                gd = 0
+                for _, gr in seg.iterrows():
+                    sct = scoring_team(gr)
+                    if sct == t:
+                        gd += 1
+                    elif sct == opp:
+                        gd -= 1
+                sub_goal_diffs[w][t].append(int(gd))
+
+    sub_goal_diff_ranking = []
+    for t in teams:
+        mp = int(matches_per_team.get(t, 0))
+        avg_gd_match = (team_goal_diff.get(t, 0) / mp) if mp else 0
+
+        rec = {
+            "team": t,
+            "matches": mp,
+            "avgGoalDiffPerMatch": round(float(avg_gd_match), 3),
+        }
+
+        for w in windows:
+            vals = sub_goal_diffs[w][t]
+            avg_after = (sum(vals) / len(vals)) if vals else 0
+            baseline = avg_gd_match * (w / 90)
+            rec[f"after{w}"] = {
+                "avgGoalDiff": round(float(avg_after), 3),
+                "samples": len(vals),
+                "baseline": round(float(baseline), 3),
+                "deltaVsBaseline": round(float(avg_after - baseline), 3),
+            }
+
+        sub_goal_diff_ranking.append(rec)
+
+    sub_goal_diff_ranking.sort(key=lambda r: (-r["after20"]["avgGoalDiff"], r["team"]))
+
+    # Timing bins per team
+    bins = [("0-60", 0, 60), ("61-75", 61, 75), ("76-90", 76, 999)]
+    team_bin_counts = {t: {b[0]: 0 for b in bins} for t in teams}
+
+    for _, r in sub_ins.dropna(subset=["team"]).iterrows():
+        m = r.get("minute_num")
+        if pd.isna(m):
+            continue
+        m = int(m)
+        for name, lo, hi in bins:
+            if lo <= m <= hi:
+                team_bin_counts[r["team"]][name] += 1
+                break
+
+    team_sub_timing = []
+    league_counts = {b[0]: 0 for b in bins}
+
+    for t in teams:
+        c = team_bin_counts[t]
+        total = int(sum(c.values()))
+        bins_obj = {}
+        for name in c:
+            pct = (c[name] / total * 100) if total else 0
+            bins_obj[name] = {"count": int(c[name]), "pct": round(float(pct), 1)}
+            league_counts[name] += int(c[name])
+
+        team_sub_timing.append({
+            "team": t,
+            "totalSubs": total,
+            "bins": bins_obj,
+        })
+
+    league_total = sum(league_counts.values())
+    league_avg = {
+        name: round((league_counts[name] / league_total * 100) if league_total else 0, 1)
+        for name in league_counts
+    }
+
+    # Supersub top10
+    pm_path = Path("data_raw/player_matchdata.csv")
+    supersub_top10 = []
+
+    if pm_path.exists():
+        pm = pd.read_csv(pm_path)
+        req_pm = ["Player Name", "Team", "Substituted In", "Goals Scored", "Penalties Scored"]
+        if all(c in pm.columns for c in req_pm):
+            si = pm[pm["Substituted In"].astype(str).str.lower().eq("true")].copy()
+            if not si.empty:
+                si["Player Name"] = si["Player Name"].astype(str).str.strip()
+                si["Team"] = si["Team"].astype(str).str.strip()
+                si = si[(si["Player Name"] != "") & (si["Team"] != "")]
+
+                si["Goals Scored"] = pd.to_numeric(si["Goals Scored"], errors="coerce").fillna(0)
+                si["Penalties Scored"] = pd.to_numeric(si["Penalties Scored"], errors="coerce").fillna(0)
+                si["sub_goals_nonpen"] = (si["Goals Scored"] - si["Penalties Scored"]).clip(lower=0)
+
+                grp = si.groupby(["Player Name", "Team"], dropna=False).agg(
+                    goals=("sub_goals_nonpen", "sum"),
+                    subApps=("sub_goals_nonpen", "size"),
+                ).reset_index()
+
+                grp = grp[grp["goals"] > 0].copy()
+                grp["goals"] = grp["goals"].round().astype(int)
+                grp["subApps"] = grp["subApps"].astype(int)
+
+                grp = grp.sort_values(["goals", "subApps", "Player Name"], ascending=[False, False, True]).head(10)
+
+                supersub_top10 = [
+                    {
+                        "player": r["Player Name"],
+                        "team": r["Team"],
+                        "goals": int(r["goals"]),
+                        "subApps": int(r["subApps"]),
+                    }
+                    for _, r in grp.iterrows()
+                ]
+
+    out = {
+        "subsPerMatchRanking": subs_per_match,
+        "subGoalDiffRanking": sub_goal_diff_ranking,
+        "teamSubTiming": team_sub_timing,
+        "leagueSubTimingAvgPct": league_avg,
+        "supersubTop10": supersub_top10,
+    }
+
+    dst.write_text(json.dumps(out, ensure_ascii=False, indent=2))
+
 # ================================= CLI ======================================
 
 def main():
@@ -1144,11 +1367,12 @@ def main():
     export_points_series(x, od / "team_points.json")
     export_elo_series(x, od / "team_elo.json")
     export_rapm_segments_all(x, od / "team_rapm_segments.json")
+    export_substitution_insights(x, od / "substitution_insights.json")
     export_data_team_csv(od / "data_team.csv")
     print(
         "OK → team_stats, h2h, homeaway, event_bins, first_scorer, "
         "halftime_fulltime, player_stats, team_points, team_elo, "
-        "team_rapm_segments, data_team.csv"
+        "team_rapm_segments, substitution_insights, data_team.csv"
     )
 
 
