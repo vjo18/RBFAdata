@@ -28,6 +28,7 @@ def _build_sheet_url(gid: str | int) -> str:
 GID_DATA_TEAM        = "0"           # tab: Data Team
 GID_TEAM_STATS       = "1098770111"  # tab: Team Stats
 GID_PLAYER_STATS     = "1104078248"  # tab: Player Stats
+GID_PLAYER_MATCHDATA = "998877665"   # local: Player Matchdata
 GID_DATA_MATCHEVENT  = "677032943"   # tab: Data Matchevent
 
 # Optioneel: voor 'vorig seizoen' reeksen (als je zulke tabs gepublished hebt)
@@ -53,6 +54,7 @@ LOCAL_MAP = {
     GID_DATA_TEAM:       "data_raw/data_team.csv",
     GID_TEAM_STATS:      "data_raw/team_stats.csv",
     GID_PLAYER_STATS:    "data_raw/player_stats.csv",
+    GID_PLAYER_MATCHDATA: str(PLAYER_INPUT),
     GID_DATA_MATCHEVENT: "data_raw/data_matchevent.csv",
 }
 
