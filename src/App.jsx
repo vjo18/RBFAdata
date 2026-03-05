@@ -258,6 +258,129 @@ const ProbabilityBars = ({ title, rows, selected, fillClass = "bg-emerald-500", 
   </div>
 );
 
+const SubstitutionLeagueRankings = ({ selectedTeam, data }) => {
+  const subsRows = data?.subsPerMatchRanking || [];
+  const impactRows = data?.subGoalDiffRanking || [];
+
+  const Table = ({ title, headers, rows }) => (
+    <div className="rounded-2xl bg-white shadow-sm ring-1 ring-black/5 overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-100">
+        <h3 className="text-lg font-semibold">{title}</h3>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-sm">
+          <thead className="bg-gray-50 text-gray-600">
+            <tr>
+              {headers.map((h) => (
+                <th key={h.key} className={`px-3 py-2 ${h.align || "text-left"}`}>{h.label}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={r.team} className={r.team === selectedTeam ? "bg-amber-50" : "hover:bg-gray-50"}>
+                <td className="px-3 py-2">{i + 1}</td>
+                <td className="px-3 py-2 font-medium whitespace-nowrap">{r.team}</td>
+                {r.cells.map((cell, idx) => (
+                  <td key={idx} className={`px-3 py-2 whitespace-nowrap ${cell.align || "text-right"}`}>{cell.value}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <Table
+        title="Ranglijst — gem. wissels per wedstrijd"
+        headers={[
+          { key: "rank", label: "#", align: "text-left" },
+          { key: "team", label: "Team", align: "text-left" },
+          { key: "value", label: "Gem. wissels", align: "text-right" },
+        ]}
+        rows={subsRows.map((r) => ({
+          team: r.team,
+          cells: [{ value: r.avgSubsPerMatch.toFixed(2) }],
+        }))}
+      />
+
+      <Table
+        title="Ranglijst — doelsaldo na wissel (10' & 20')"
+        headers={[
+          { key: "rank", label: "#", align: "text-left" },
+          { key: "team", label: "Team", align: "text-left" },
+          { key: "gd10", label: "GD +10'", align: "text-right" },
+          { key: "delta10", label: "Δ vs standaard", align: "text-right" },
+          { key: "gd20", label: "GD +20'", align: "text-right" },
+          { key: "delta20", label: "Δ vs standaard", align: "text-right" },
+        ]}
+        rows={impactRows.map((r) => ({
+          team: r.team,
+          cells: [
+            { value: Number(r.after10?.avgGoalDiff ?? 0).toFixed(2) },
+            { value: Number(r.after10?.deltaVsBaseline ?? 0).toFixed(2) },
+            { value: Number(r.after20?.avgGoalDiff ?? 0).toFixed(2) },
+            { value: Number(r.after20?.deltaVsBaseline ?? 0).toFixed(2) },
+          ],
+        }))}
+      />
+    </div>
+  );
+};
+
+const SubGoalDiffMethodNote = () => (
+  <div className="rounded-2xl bg-amber-50/60 shadow-sm ring-1 ring-amber-200 px-4 py-3 text-sm text-amber-900">
+    <strong>Hoe wordt "Δ vs standaard" berekend?</strong>
+    <div className="mt-1">
+      Per ploeg nemen we eerst het <em>gemiddeld doelsaldo per volledige wedstrijd</em>.
+      Voor een venster van 10 of 20 minuten schalen we dat lineair: standaard = (gemiddeld doelsaldo per match) × (venster / 90).
+      De delta is dan: <em>doelsaldo na wissel in dat venster</em> minus <em>deze standaard</em>.
+    </div>
+  </div>
+);
+
+const TeamSubTimingCard = ({ teamName, teamRec, leagueAvg }) => {
+  if (!teamRec) return null;
+  const bins = ["0-60", "61-75", "76-90"];
+
+  return (
+    <div className="rounded-2xl bg-white shadow-sm ring-1 ring-black/5 overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-100">
+        <h3 className="text-lg font-semibold">Wisselmomenten ({teamName})</h3>
+      </div>
+      <div className="p-4 space-y-3">
+        <p className="text-xs text-gray-600">Paarse balk = teampercentage · <span className="font-semibold text-fuchsia-600">roze lijn</span> = competitiegemiddelde.</p>
+        {bins.map((bin) => {
+          const rec = teamRec?.bins?.[bin] || { count: 0, pct: 0 };
+          const league = Number(leagueAvg?.[bin] ?? 0);
+          const delta = Number(rec.pct ?? 0) - league;
+          return (
+            <div key={bin}>
+              <div className="flex justify-between text-sm mb-1">
+                <span className="font-medium">{bin} min</span>
+                <span>
+                  {Number(rec.pct ?? 0).toFixed(1)}% ({rec.count}) · Competitie: {league.toFixed(1)}% · Δ {delta >= 0 ? "+" : ""}{delta.toFixed(1)}%
+                </span>
+              </div>
+              <div className="relative h-3 bg-slate-200 rounded overflow-hidden">
+                <div className="h-3 bg-indigo-500" style={{ width: `${Math.max(0, Math.min(100, Number(rec.pct ?? 0)))}%` }} />
+                <div
+                  className="absolute top-0 bottom-0 w-[3px] bg-fuchsia-500 shadow-[0_0_0_1px_rgba(255,255,255,0.9)]"
+                  style={{ left: `calc(${Math.max(0, Math.min(100, league))}% - 1.5px)` }}
+                  title={`Competitiegemiddelde: ${league.toFixed(1)}%`}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 const PositionDistributionCard = ({ team, rows, totalRuns }) => {
   const maxProb = Math.max(0.001, ...(rows || []).map((r) => Number(r.probability) || 0));
 
@@ -1884,7 +2007,7 @@ function PointsChart({ seriesCurrent, seriesPrev, showPrev }) {
 }
 
 // ===== Leaderboards helpers =====
-function makeLeaderboards(rows = []) {
+function makeLeaderboards(rows = [], supersubTop10 = []) {
   const num = (v) => (Number.isFinite(+v) ? +v : 0);
 
   const mins   = [...rows].map(r => ({ Speler:r.Speler, Team:r.Team, val:num(r["Speelminuten"]) }));
@@ -1908,6 +2031,7 @@ function makeLeaderboards(rows = []) {
     doubleYellow:  top10(dblg),
     red:           top10(rood),
     cleanSheets:   top10(cs),
+    supersubGoals: supersubTop10,
   };
 }
 
@@ -1934,7 +2058,7 @@ function Leaderboards({ data, selectedTeam }) {
                 <td className="px-3 py-2">{i+1}</td>
                 <td className="px-3 py-2">{r.Speler}</td>
                 <td className="px-3 py-2">{r.Team}</td>
-                <td className="px-3 py-2 text-right">{r.val}</td>
+                <td className="px-3 py-2 text-right">{r.valueLabel ?? r.val}</td>
               </tr>
             ))}
             {!items?.length && (
@@ -1955,6 +2079,7 @@ function Leaderboards({ data, selectedTeam }) {
       <Box title="Top 10 — Dubbel geel"          items={data.doubleYellow} />
       <Box title="Top 10 — Rood"                 items={data.red} />
       <Box title="Top 10 — Clean sheets"         items={data.cleanSheets} />
+      <Box title="Supersub Top 10 — Goals (excl. penalties)" items={data.supersubGoals} />
     </div>
   );
 }
@@ -2100,6 +2225,7 @@ export default function App() {
   const [htFt, setHtFt] = useState(null);
   const [rapmSegments, setRapmSegments] = useState(null);
   const [calendarRows, setCalendarRows] = useState([]);
+  const [subInsights, setSubInsights] = useState(null);
 
 
 
@@ -2107,7 +2233,7 @@ export default function App() {
     let alive = true;
     (async () => {
       const [
-        ts, h, ha, eb, fs, hf, ps, tp, te, rs, calendarCsv,
+        ts, h, ha, eb, fs, hf, ps, tp, te, rs, calendarCsv, si,
       ] = await Promise.all([
         fetch("data/team_stats.json").then(r => r.json()),
         fetch("data/h2h.json").then(r => r.json()),
@@ -2120,6 +2246,7 @@ export default function App() {
         fetch("data/team_elo.json").then(r => r.json()),
         fetch("data/team_rapm_segments.json").then(r => r.json()),
         fetch("data/data_team.csv").then(r => r.text()),
+        fetch("data/substitution_insights.json").then(r => r.json()),
       ]);
 
       if (!alive) return;
@@ -2134,6 +2261,7 @@ export default function App() {
       setEloMap(te);
       setRapmSegments(rs);
       setCalendarRows(parseCsv(calendarCsv));
+      setSubInsights(si);
     })();
     return () => { alive = false; };
   }, []);
@@ -2176,6 +2304,11 @@ export default function App() {
 
   const myHomeAway = homeAway?.[team];
   const myEvent = eventBins?.[team];
+  const myTeamSubTiming = useMemo(
+    () => (subInsights?.teamSubTiming || []).find((r) => r.team === team) || null,
+    [subInsights, team]
+  );
+
   const myFirstScorer = firstScorer?.[team];
   const myHtFt = htFt?.[team];
   const myPlayers = playerStats?.[team] ?? [];
@@ -2313,7 +2446,15 @@ const timingScatterData = useMemo(() => {
     return (allPlayers||[]).filter(r => (showPlayers && isP(r.Type)) || (showKeepers && isK(r.Type)));
   }, [allPlayers, showPlayers, showKeepers]);
 
-  const leaderboards = useMemo(() => makeLeaderboards(allPlayers), [allPlayers]);
+  const leaderboards = useMemo(() => {
+    const supersubRows = (subInsights?.supersubTop10 || []).map((r) => ({
+      Speler: r.player,
+      Team: r.team,
+      val: r.goals,
+      valueLabel: `${r.goals} (${r.subApps})`,
+    }));
+    return makeLeaderboards(allPlayers, supersubRows);
+  }, [allPlayers, subInsights]);
 
   const eloSeries = useMemo(() => {
     if (!eloMap || !team) return [];
@@ -2723,6 +2864,17 @@ const teamXppmBoxData = useMemo(() => {
   </div>
 </section>
 
+<section className="mb-8">
+  <SubstitutionLeagueRankings
+    selectedTeam={team}
+    data={subInsights}
+  />
+</section>
+
+<section className="mb-8">
+  <SubGoalDiffMethodNote />
+</section>
+
 {/* Rij 2: ELO-ranking + RAPM-teamsterkte */}
 <section className="mb-8">
   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2753,7 +2905,16 @@ const teamXppmBoxData = useMemo(() => {
   <HomeAwayBars data={myHomeAway} />
 </div>
 </section>
-        <section className="mb-10"><EventHeatmap rec={myEvent} /></section>
+        <section className="mb-8">
+          <div className="grid grid-cols-1 gap-4">
+            <EventHeatmap rec={myEvent} />
+            <TeamSubTimingCard
+              teamName={team}
+              teamRec={myTeamSubTiming}
+              leagueAvg={subInsights?.leagueSubTimingAvgPct}
+            />
+          </div>
+        </section>
 
         <section className="mb-10">
   <FirstScorerCard teamName={team} rec={myFirstScorer} />
