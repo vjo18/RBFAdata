@@ -161,7 +161,7 @@ const EloRankingTable = ({ teamName, teamsStats }) => {
 
 
 /* ------------------ NIEUW: Bar chart component ------------------ */
-const BarListChart = ({ title, rows, selected, fixedMaxAbs, leftLabel, rightLabel }) => {
+const BarListChart = ({ title, rows, selected, fixedMaxAbs, leftLabel, rightLabel, valueFormatter }) => {
   const autoMax = React.useMemo(
     () => Math.max(1, ...rows.map(r => Math.abs(Number(r.value) || 0))),
     [rows]
@@ -211,6 +211,9 @@ const BarListChart = ({ title, rows, selected, fixedMaxAbs, leftLabel, rightLabe
                     </div>
                   </div>
                 </div>
+                <div className="w-12 shrink-0 text-right text-xs text-gray-600 tabular-nums">
+                  {valueFormatter ? valueFormatter(value) : `${Math.round(Number(value) || 0)}`}
+                </div>
               </div>
             </li>
           ))}
@@ -218,11 +221,12 @@ const BarListChart = ({ title, rows, selected, fixedMaxAbs, leftLabel, rightLabe
 
         {/* X-as labels: uitgelijnd met bartrack en begrensd binnen het bargebied */}
         {(leftLabel || rightLabel) && (
-          <div className="mt-3 ml-52 px-2">
+          <div className="mt-3 ml-52 mr-12 px-2">
             <div className="grid grid-cols-2">
-              <div className="text-xs text-gray-500 text-left pr-1 truncate">{leftLabel}</div>
-              <div className="text-xs text-gray-500 text-right pl-1 truncate">{rightLabel}</div>
+              <div className="text-xs text-gray-500 text-left pr-1 truncate">{leftLabel} ({Math.round(-maxAbs)})</div>
+              <div className="text-xs text-gray-500 text-right pl-1 truncate">{rightLabel} ({Math.round(maxAbs)})</div>
             </div>
+            <div className="text-[11px] text-gray-400 text-center mt-1">0</div>
           </div>
         )}
       </div>
@@ -3100,9 +3104,9 @@ const teamXppmBoxData = useMemo(() => {
       title="Moeilijkheid resterend programma"
       rows={rowsOpp}
       selected={team}
-      fixedMaxAbs={20}
       leftLabel="Makkelijk"
       rightLabel="Moeilijk"
+      valueFormatter={(v) => (Number(v) || 0).toFixed(1)}
     />
 
     {/* 2. Vorm laatste 5 wedstrijden */}
@@ -3110,9 +3114,9 @@ const teamXppmBoxData = useMemo(() => {
       title="Vorm laatste 5 wedstrijden"
       rows={rowsForm}
       selected={team}
-      fixedMaxAbs={150}
       leftLabel="Slechte vorm"
       rightLabel="Goede vorm"
+      valueFormatter={(v) => (Number(v) || 0).toFixed(1)}
     />
   </div>
 </section>
