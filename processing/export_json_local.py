@@ -46,7 +46,7 @@ def outdir():
     return p
 
 def _minidump(obj: dict | list, fp: Path):
-    fp.write_text(json.dumps(obj, ensure_ascii=False, separators=SEP))
+    fp.write_text(json.dumps(obj, ensure_ascii=False, separators=SEP, allow_nan=False))
 
 
 # In plaats van Google Sheets: lokale CSV's
@@ -152,6 +152,10 @@ def export_team_stats(xfile: str, dst: Path):
         if col == "Team":
             continue
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
+    # Exporteer enkel de kolommen die de frontend gebruikt, zodat eventuele
+    # NaN-waarden in extra berekende velden nooit in team_stats.json komen.
+    df = df[keep].copy()
 
     df["ELO"] = df["ELO"].round(1)
 
