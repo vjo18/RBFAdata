@@ -204,6 +204,101 @@ function TeamProfileCard({ profile }) {
   );
 }
 
+function SquadStructureCard({ team, playerStats, teamPlayerImpact }) {
+  const rows = playerStats?.[team] || [];
+  const active = rows
+    .map((p) => ({
+      ...p,
+      minutes: num(p.Speelminuten),
+      starts: num(p.Gestart),
+      selections: num(p.Selecties),
+      goals: num(p.Goals),
+      isKeeper: String(p.Type || "").toLowerCase() === "keeper",
+    }))
+    .filter((p) => p.minutes > 0)
+    .sort((a, b) => b.minutes - a.minutes);
+
+  if (!active.length) return null;
+
+  const threshold = num(teamPlayerImpact?.meta?.reliableMinutes, 1080);
+  const totalMinutes = active.reduce((s, p) => s + p.minutes, 0);
+  const top11Minutes = active.slice(0, 11).reduce((s, p) => s + p.minutes, 0);
+  const top11Share = totalMinutes > 0 ? 100 * top11Minutes / totalMinutes : 0;
+  const coreCount = active.filter((p) => p.minutes >= threshold).length;
+  const regularStarters = active.filter((p) => p.starts >= 15).length;
+  const keepers = active.filter((p) => p.isKeeper);
+  const keeperMinutes = keepers.reduce((s, p) => s + p.minutes, 0);
+  const keeperShare = keeperMinutes > 0 ? 100 * num(keepers[0]?.minutes) / keeperMinutes : 0;
+  const impactLeaders = (teamPlayerImpact?.teams?.[team]?.players || [])
+    .filter((p) => p.reliable)
+    .slice(0, 3);
+
+  const continuityLabel = top11Share >= 78
+    ? "zeer vaste kern"
+    : top11Share >= 70
+    ? "relatief vaste kern"
+    : "brede rotatie";
+  const keeperLabel = keeperShare >= 85
+    ? "duidelijke eerste keeper"
+    : keeperShare >= 65
+    ? "meestal één eerste keeper"
+    : "keeperminuten sterk verdeeld";
+
+  return (
+    <div className="rounded-2xl bg-white shadow-sm ring-1 ring-black/5 overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-100">
+        <h2 className="text-xl font-semibold">Kern, continuïteit & afhankelijkheid</h2>
+        <p className="text-xs text-gray-500 mt-1">Selectiegebruik over het volledige seizoen; beschrijvend, niet normatief.</p>
+      </div>
+      <div className="p-4">
+        <div className="grid grid-cols-2 gap-3">
+          <KpiCard label="Spelers met minuten" value={active.length} sub="volledige selectie" />
+          <KpiCard label={`≥ ${Math.round(threshold)} min.`} value={coreCount} sub="structurele kern" />
+          <KpiCard label="Top-11 minutenaandeel" value={pct(top11Share, 0)} sub={continuityLabel} />
+          <KpiCard label="Regelmatige starters" value={regularStarters} sub="≥ 15 basisplaatsen" />
+        </div>
+
+        {keepers.length > 0 && (
+          <div className="mt-4 rounded-xl bg-slate-50 border border-slate-200 p-3">
+            <div className="flex justify-between gap-3 text-sm">
+              <span className="font-medium">Keepercontinuïteit</span>
+              <span className="font-semibold">{pct(keeperShare, 0)}</span>
+            </div>
+            <div className="mt-2 h-2.5 rounded-full bg-slate-200 overflow-hidden">
+              <div className="h-full bg-sky-500" style={{ width: `${clamp(keeperShare / 100) * 100}%` }} />
+            </div>
+            <div className="mt-1 text-[11px] text-gray-500">
+              {keeperLabel} · {keepers[0]?.Speler}: {Math.round(num(keepers[0]?.minutes))} min.
+            </div>
+          </div>
+        )}
+
+        <div className="mt-4">
+          <div className="text-xs font-semibold text-gray-700">Robuuste impactleiders binnen de ploeg</div>
+          <div className="mt-2 space-y-2">
+            {impactLeaders.map((p, i) => (
+              <div key={p.name} className="grid grid-cols-[1.5rem_1fr_auto] gap-2 items-center text-sm">
+                <span className="text-gray-400">{i + 1}</span>
+                <div className="min-w-0">
+                  <div className="font-medium truncate">{p.name}</div>
+                  <div className="text-[11px] text-gray-500">{Math.round(num(p.minutes))} min.</div>
+                </div>
+                <span className="font-semibold tabular-nums">{fmt(p.teamImpactScore, 1)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <p className="mt-4 text-[11px] leading-relaxed text-gray-500">
+          Een hoog Top-11 minutenaandeel wijst op continuïteit, niet automatisch op kwaliteit. Een lage waarde kan
+          bewuste rotatie, blessures of een brede kern weerspiegelen.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+
 function OpponentScout({ team, profiles }) {
   const [opponentChoice, setOpponentChoice] = useState("");
   const opponents = useMemo(
@@ -535,6 +630,7 @@ export default function AnalystDashboard({
   firstScorer,
   substitutionStats,
   teamPlayerImpact,
+  playerStats,
 }) {
   const rows = useMemo(
     () => buildTeamRows({ teamStats, homeAway, eventBins, firstScorer, substitutionStats }),
@@ -575,21 +671,19 @@ export default function AnalystDashboard({
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <OpponentScout team={team} profiles={profiles} />
-        <div className="rounded-2xl bg-slate-900 text-white p-5">
-          <div className="text-xs uppercase tracking-wider text-slate-400">Analistenkader</div>
-          <h2 className="text-xl font-semibold mt-1">Zo gebruik je deze bovenlaag</h2>
-          <div className="mt-4 space-y-3 text-sm text-slate-200 leading-relaxed">
-            <p><strong className="text-white">1. Diagnose:</strong> begin bij de league ranks, niet bij één losse grafiek. Zoek extreme sterktes en zwaktes.</p>
-            <p><strong className="text-white">2. Tegenstander:</strong> vergelijk dezelfde metrics en bepaal welke matchup video-analyse verdient.</p>
-            <p><strong className="text-white">3. Spelers:</strong> gebruik de robuuste impactshortlist om kandidaten te vinden; valideer daarna rol, minuten en beelden.</p>
-            <p><strong className="text-white">4. Detail:</strong> goal timing, eerste goal, rust/eindstand, wissels en segmenten verklaren waar de patronen ontstaan.</p>
-          </div>
-          <div className="mt-5 rounded-xl bg-white/10 p-3 text-xs text-slate-300">
-            Dataset: {teamPlayerImpact?.meta?.validatedMatches || 240} gevalideerde competitiewedstrijden ·
-            RAPM α {teamPlayerImpact?.meta?.rapmAlpha || "—"} · xPts α {teamPlayerImpact?.meta?.xPtsAlpha || "—"} ·
-            {teamPlayerImpact?.meta?.bootstrapRuns || 200} match-bootstraps.
-          </div>
-        </div>
+        <SquadStructureCard
+          team={team}
+          playerStats={playerStats}
+          teamPlayerImpact={teamPlayerImpact}
+        />
+      </div>
+
+      <div className="rounded-xl bg-slate-900 text-slate-200 px-4 py-3 text-xs leading-relaxed">
+        <span className="font-semibold text-white">Modelcontext:</span>{" "}
+        {teamPlayerImpact?.meta?.validatedMatches || 240} gevalideerde wedstrijden · RAPM α{" "}
+        {teamPlayerImpact?.meta?.rapmAlpha || "—"} · xPts α {teamPlayerImpact?.meta?.xPtsAlpha || "—"} ·{" "}
+        {teamPlayerImpact?.meta?.bootstrapRuns || 200} match-bootstraps. Gebruik league ranks voor diagnose,
+        head-to-head bootstraps voor spelersverschillen en video/rolcontext voor finale scoutingbeslissingen.
       </div>
 
       <div id="league-analyse" className="space-y-6 scroll-mt-4">
