@@ -345,7 +345,8 @@ function LeagueLandscape({ profiles, selectedTeam }) {
               type="number"
               dataKey="gaPlot"
               name="Goals tegen / match"
-              domain={[maxGa, minGa]}
+              domain={[minGa, maxGa]}
+              reversed
               tickFormatter={(v) => Number(v).toFixed(1)}
               label={{ value: "← minder tegengoals", angle: -90, position: "insideLeft" }}
             />
