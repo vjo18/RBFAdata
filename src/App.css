@@ -4,6 +4,7 @@
 .player-stats-table {
   table-layout: fixed;
   width: 100%;
+  min-width: 1180px;
   border-collapse: collapse;
   font-size: 0.9rem;
   line-height: 1.2;
@@ -45,11 +46,7 @@
    - Desktop: no scroll (content fits) */
 .ps-scroll {
   overflow-x: auto;
-}
-@media (min-width: 1024px) {
-  .ps-scroll {
-    overflow-x: visible;
-  }
+  -webkit-overflow-scrolling: touch;
 }
 
 /* ===========================
@@ -108,4 +105,10 @@ html, body {
 /* Zorg dat mobiele browsers tekst niet “vervormen” */
 @media (max-width: 640px) {
   html, body { -webkit-text-size-adjust: 100%; }
+}
+
+
+/* Rustige anchor-navigatie zonder motion te forceren voor gebruikers die dat uitschakelen. */
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
 }
