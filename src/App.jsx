@@ -2703,6 +2703,7 @@ export default function App() {
   // Opties voor Y-as metric
   const SCATTER_METRICS = [
     { key: "RAPM_per90",      label: "Impact totaal (RAPM) / 90min" },
+    { key: "xPPM_per90",      label: "xPts-impact / 90min" },
    // { key: "RAPM_off_per90",  label: "Impact offensief (RAPM_off) / 90min" },
    // { key: "RAPM_def_per90",  label: "Impact defensief (RAPM_def) / 90min" },
     { key: "Goals/90min",     label: "Goals (excl. pen) / 90min" },
@@ -2729,6 +2730,7 @@ export default function App() {
     "RAPM_per90":     ["RAPM_per90","MVP p>20/90min","MVP >20/90min","MVP p>20 per 90min"],
     "RAPM_off_per90": ["RAPM_off_per90","RAPM off per90","RAPM_off"],
     "RAPM_def_per90": ["RAPM_def_per90","RAPM def per90","RAPM_def"],
+    "xPPM_per90":     ["xPPM_per90","XPPM_per90"],
     "Goals/90min":    ["Goals/90min","Goals per 90min","Goals p/90","Goals p90"],
     "Geel/90min":     ["Geel/90min","Yellow/90min","Geel p90"]
   };
@@ -3227,70 +3229,16 @@ const minMinutesForRapm = useMemo(() => {
 
 
     // RAPM-boxplotdata per team (alleen spelers met >=600 min)
-const teamRapmBoxData = useMemo(() => {
-  if (!playerStats) return [];
-
+const buildImpactBoxData = (metricKey) => {
+  const teamsData = teamPlayerImpact?.teams || {};
   const out = [];
+  const threshold = Number(teamPlayerImpact?.meta?.reliableMinutes ?? minMinutesForRapm ?? 0);
 
-  for (const [teamName, arrRaw] of Object.entries(playerStats)) {
-    const arr = arrRaw || [];
-
-    const rapms = arr
-      .filter(p => {
-        const mins = Number(p.Speelminuten ?? p["Minutes"] ?? 0);
-        const rapm = Number(p.RAPM_per90 ?? 0);
-        return (
-          Number.isFinite(mins) &&
-          mins >= minMinutesForRapm &&   // <-- hier ipv 600
-          Number.isFinite(rapm)
-        );
-      })
-        .map(p => Number(p.RAPM_per90))
-        .sort((a, b) => a - b);
-
-      if (!rapms.length) continue;
-
-      const q = (p) => {
-        const pos = (rapms.length - 1) * p;
-        const lo = Math.floor(pos);
-        const hi = Math.ceil(pos);
-        if (lo === hi) return rapms[lo];
-        const w = pos - lo;
-        return rapms[lo] * (1 - w) + rapms[hi] * w;
-      };
-
-      out.push({
-        team: teamName,
-        min: rapms[0],
-        q1: q(0.25),
-        median: q(0.5),
-        q3: q(0.75),
-        max: rapms[rapms.length - 1],
-      });
-    }
-
-    return out;
-    }, [playerStats]);
-
-const teamXppmBoxData = useMemo(() => {
-  if (!playerStats) return [];
-
-  const out = [];
-
-  for (const [teamName, arrRaw] of Object.entries(playerStats)) {
-    const arr = arrRaw || [];
-
-    const vals = arr
-      .filter((p) => {
-        const mins = Number(p.Speelminuten ?? p["Minutes"] ?? 0);
-        const xppm = Number(p.xPPM_per90 ?? p["xPPM_per90"] ?? 0);
-        return (
-          Number.isFinite(mins) &&
-          mins >= minMinutesForRapm &&
-          Number.isFinite(xppm)
-        );
-      })
-      .map((p) => Number(p.xPPM_per90 ?? p["xPPM_per90"]))
+  for (const [teamName, rec] of Object.entries(teamsData)) {
+    const vals = (rec?.players || [])
+      .filter((p) => Number(p.minutes) >= threshold)
+      .map((p) => Number(p[metricKey]))
+      .filter((v) => Number.isFinite(v))
       .sort((a, b) => a - b);
 
     if (!vals.length) continue;
@@ -3315,8 +3263,17 @@ const teamXppmBoxData = useMemo(() => {
   }
 
   return out;
-}, [playerStats, minMinutesForRapm]);
+};
 
+const teamRapmBoxData = useMemo(
+  () => buildImpactBoxData("rapmPer90"),
+  [teamPlayerImpact, minMinutesForRapm]
+);
+
+const teamXppmBoxData = useMemo(
+  () => buildImpactBoxData("xPtsPer90"),
+  [teamPlayerImpact, minMinutesForRapm]
+);
 
 
   return (
