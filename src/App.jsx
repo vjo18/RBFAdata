@@ -584,7 +584,7 @@ const ProjectedXPtsStabilityCard = ({ team, rows, stableFromMatchday }) => (
 
 /* ------------------ NIEUW: Team RAPM boxplots ------------------ */
 const TeamRapmBoxplots = ({ dataRapm, dataXppm, selectedTeam, minMinutes }) => {
-  const [metric, setMetric] = React.useState("RAPM"); // "RAPM" of "xPPM"
+  const [metric, setMetric] = React.useState("RAPM"); // "RAPM" of "xPts-impact"
 
   const data = metric === "RAPM" ? dataRapm : dataXppm;
   if (!data?.length) return null;
@@ -621,15 +621,15 @@ const TeamRapmBoxplots = ({ dataRapm, dataXppm, selectedTeam, minMinutes }) => {
             </button>
             <button
               type="button"
-              onClick={() => setMetric("xPPM")}
+              onClick={() => setMetric("xPts-impact")}
               className={
                 "px-2 py-[2px] rounded-full " +
-                (metric === "xPPM"
+                (metric === "xPts-impact"
                   ? "bg-white shadow text-gray-900"
                   : "text-gray-500")
               }
             >
-              xPPM
+              xPts-impact
             </button>
           </div>
         </div>
@@ -1988,9 +1988,9 @@ function PlayerRapmTable({ rows, minMinutes }) {
       const rapmSe  = toNum(r.RAPM_SE_per90 ?? r.RAPM_SE);
       const rapmZ   = toNum(r.RAPM_z);
 
-      const xppm    = toNum(r["xPPM_per90"] ?? r["XPPM_per90"]);
-      const xppmSe  = toNum(r["xPPM_SE"] ?? r["xPPM_SE_per90"] ?? r["XPPM_SE"]);
-      const xppmZ   = toNum(r["xPPM_z"] ?? r["XPPM_z"]);
+      const xppm    = toNum(r["xPts-impact_per90"] ?? r["XPPM_per90"]);
+      const xppmSe  = toNum(r["xPts-impact_SE"] ?? r["xPts-impact_SE_per90"] ?? r["XPPM_SE"]);
+      const xppmZ   = toNum(r["xPts-impact_z"] ?? r["XPPM_z"]);
 
       const mins    = toNum(r.Speelminuten ?? r.Minutes);
 
@@ -2059,7 +2059,7 @@ function PlayerRapmTable({ rows, minMinutes }) {
     <div className="rounded-2xl bg-white shadow-sm ring-1 ring-black/5 overflow-hidden">
       <div className="px-4 py-2 border-b border-gray-100 flex items-center justify-between">
         <h3 className="text-lg font-semibold">
-          Spelersimpact (RAPM & xPPM) + betrouwbaarheid
+          Spelersimpact (RAPM & xPts-impact) + betrouwbaarheid
         </h3>
         <div className="text-xs text-gray-500">
           Min. minuten voor “stabiel”: {Math.round(minMinutes ?? 0)} min
@@ -2107,7 +2107,7 @@ function PlayerRapmTable({ rows, minMinutes }) {
                 className="px-2 py-1 text-right cursor-pointer select-none"
                 onClick={() => onSort("xppm")}
               >
-                xPPM / 90 {sortArrow("xppm")}
+                xPts-impact / 90 {sortArrow("xppm")}
               </th>
               <th
                 className="px-2 py-1 text-right cursor-pointer select-none"
@@ -2166,7 +2166,7 @@ function PlayerRapmTable({ rows, minMinutes }) {
 
       <div className="px-4 pb-2 pt-2 text-[11px] text-gray-500 space-y-1">
         <p>• RAPM = impact op doelpuntensaldo per 90 min.</p>
-        <p>• xPPM = impact op expected points per 90 min (meer datapunten, vaak stabieler).</p>
+        <p>• xPts-impact = impact op expected points per 90 min (meer datapunten, vaak stabieler).</p>
         <p>• z-score ≈ aantal standaardafwijkingen verschil met 0 (|z| ≥ 2 = sterk signaal).</p>
         <p>• SE = standaardfout van de schatting (lager = betrouwbaarder).</p>
       </div>
@@ -2177,9 +2177,13 @@ function PlayerRapmTable({ rows, minMinutes }) {
 
 
 
-function RapmSegmentsHeatmap({ data, team }) {
+function RapmSegmentsHeatmap({ data, team, impactPlayers = [] }) {
   const players = data?.players || [];
   const segments = data?.segments || [];
+  const robustRapm = React.useMemo(
+    () => new Map((impactPlayers || []).map((p) => [p.name, Number(p.rapmPer90)])),
+    [impactPlayers]
+  );
 
   if (!players.length || !segments.length) return null;
 
@@ -2257,9 +2261,9 @@ function RapmSegmentsHeatmap({ data, team }) {
             >
               <div className="w-32 pr-2 flex items-center gap-1 text-[11px] truncate">
                 <span className="font-medium truncate">{p.name}</span>
-                {typeof p.rapm_per90 === "number" && (
+                {Number.isFinite(robustRapm.get(p.name) ?? p.rapm_per90) && (
                   <span className="text-[10px] text-gray-400">
-                    {p.rapm_per90.toFixed(2)}
+                    {Number(robustRapm.get(p.name) ?? p.rapm_per90).toFixed(2)}
                   </span>
                 )}
               </div>
@@ -2661,7 +2665,27 @@ export default function App() {
   const myEvent = eventBins?.[team];
   const myFirstScorer = firstScorer?.[team];
   const myHtFt = htFt?.[team];
-  const myPlayers = playerStats?.[team] ?? [];
+  const robustImpactPlayers = teamPlayerImpact?.teams?.[team]?.players || [];
+  const myPlayers = useMemo(() => {
+    const base = playerStats?.[team] ?? [];
+    if (!robustImpactPlayers.length) return base;
+    const impactMap = new Map(robustImpactPlayers.map((p) => [p.name, p]));
+    return base.map((row) => {
+      const imp = impactMap.get(row.Speler);
+      if (!imp) return row;
+      return {
+        ...row,
+        RAPM_per90: imp.rapmPer90,
+        RAPM_CI_low: imp.rapmCiLow,
+        RAPM_CI_high: imp.rapmCiHigh,
+        RAPM_sign_stability: imp.rapmStability,
+        xPts-impact_per90: imp.xPtsPer90,
+        xPts-impact_CI_low: imp.xPtsCiLow,
+        xPts-impact_CI_high: imp.xPtsCiHigh,
+        xPts-impact_sign_stability: imp.xPtsStability,
+      };
+    });
+  }, [playerStats, team, robustImpactPlayers]);
   const myRapmSegments = rapmSegments?.[team] || null;
   const mySubstitutionMoments = substitutionStats?.timingByTeam?.[team] || [];
   const myPts = teamPoints?.[team];
@@ -3259,14 +3283,14 @@ const teamXppmBoxData = useMemo(() => {
     const vals = arr
       .filter((p) => {
         const mins = Number(p.Speelminuten ?? p["Minutes"] ?? 0);
-        const xppm = Number(p.xPPM_per90 ?? p["xPPM_per90"] ?? 0);
+        const xppm = Number(p.xPts-impact_per90 ?? p["xPts-impact_per90"] ?? 0);
         return (
           Number.isFinite(mins) &&
           mins >= minMinutesForRapm &&
           Number.isFinite(xppm)
         );
       })
-      .map((p) => Number(p.xPPM_per90 ?? p["xPPM_per90"]))
+      .map((p) => Number(p.xPts-impact_per90 ?? p["xPts-impact_per90"]))
       .sort((a, b) => a - b);
 
     if (!vals.length) continue;
@@ -3514,14 +3538,12 @@ const teamXppmBoxData = useMemo(() => {
           <TeamPlayerImpactComparison data={teamPlayerImpact} team={team} />
         </section>
 
-        {/* RAPM-tabel met betrouwbaarheidsinterval */}
         <section className="mb-10">
-          <PlayerRapmTable rows={myPlayersFiltered} minMinutes={minMinutesForRapm} />
-        </section>
-
-        {/* NIEUW: RAPM segment-visualisatie */}
-        <section className="mb-10">
-          <RapmSegmentsHeatmap data={myRapmSegments} team={team} />
+          <RapmSegmentsHeatmap
+            data={myRapmSegments}
+            team={team}
+            impactPlayers={robustImpactPlayers}
+          />
         </section>
 
 
