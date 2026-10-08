@@ -1,6 +1,7 @@
 // src/App.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import "./App.css";
+import AnalystDashboard from "./AnalystDashboard";
 import {
   LineChart, Line,
   ScatterChart, Scatter,
@@ -2960,6 +2961,11 @@ const timingScatterData = useMemo(() => {
       return hs === "" && as === "" && teamNames.includes(r.homeTeam) && teamNames.includes(r.awayTeam);
     });
 
+    // Historisch volledig seizoen: geen 100.000 nutteloze simulaties uitvoeren.
+    if (!remainingFixtures.length) {
+      return { rowsTitle: [], rowsTop5: [], remaining: 0 };
+    }
+
     const counts = Object.fromEntries(teamNames.map((name) => [name, { title: 0, top5: 0 }]));
 
     for (let run = 0; run < MC_RUNS; run += 1) {
@@ -3037,6 +3043,10 @@ const timingScatterData = useMemo(() => {
       return hs === "" && as === "" && teamNames.includes(r.homeTeam) && teamNames.includes(r.awayTeam);
     });
 
+    if (!remainingFixtures.length) {
+      return { positionRows: [], fixtures: [] };
+    }
+
     const positionCounts = Array.from({ length: teamNames.length }, () => 0);
 
     for (let run = 0; run < MC_RUNS; run += 1) {
@@ -3108,6 +3118,8 @@ const timingScatterData = useMemo(() => {
 
     return { positionRows, fixtures };
   }, [calendarRows, team, teamStats]);
+
+  const seasonComplete = (teamStats || []).length > 0 && titleAndTop5Odds.remaining === 0;
 
   const teamPointsVsExpected = useMemo(() => {
     if (!team) return [];
@@ -3357,6 +3369,25 @@ const teamXppmBoxData = useMemo(
           </div>
         </section>
 
+        <AnalystDashboard
+          team={team}
+          teamStats={teamStats}
+          homeAway={homeAway}
+          eventBins={eventBins}
+          firstScorer={firstScorer}
+          substitutionStats={substitutionStats}
+          teamPlayerImpact={teamPlayerImpact}
+        />
+
+        <section id="detailanalyse" className="mb-5 scroll-mt-4">
+          <div className="border-t border-gray-200 pt-6">
+            <h2 className="text-2xl font-semibold">Verdiepende analyse</h2>
+            <p className="text-sm text-gray-500 mt-1">
+              Detailgrafieken om de signalen uit de Analyst Cockpit verder te onderzoeken.
+            </p>
+          </div>
+        </section>
+
        {/* League ladder over volledige breedte */}
 <section className="mb-8">
   <HeadToHeadTable
@@ -3368,20 +3399,19 @@ const teamXppmBoxData = useMemo(
 </section>
 
 
-{/* Rij 1: Moeilijkheid & vorm laatste 5 wedstrijden */}
+{/* Vorm blijft relevant; toekomstprojecties alleen zolang er wedstrijden resten. */}
 <section className="mb-8">
-  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-    {/* 1. Moeilijkheid resterend programma */}
-    <BarListChart
-      title="Moeilijkheid resterend programma"
-      rows={rowsOpp}
-      selected={team}
-      leftLabel="Makkelijk"
-      rightLabel="Moeilijk"
-      valueFormatter={(v) => (Number(v) || 0).toFixed(1)}
-    />
-
-    {/* 2. Vorm laatste 5 wedstrijden */}
+  <div className={seasonComplete ? "grid grid-cols-1 gap-4" : "grid grid-cols-1 md:grid-cols-2 gap-4"}>
+    {!seasonComplete && (
+      <BarListChart
+        title="Moeilijkheid resterend programma"
+        rows={rowsOpp}
+        selected={team}
+        leftLabel="Makkelijk"
+        rightLabel="Moeilijk"
+        valueFormatter={(v) => (Number(v) || 0).toFixed(1)}
+      />
+    )}
     <BarListChart
       title="Vorm laatste 5 wedstrijden"
       rows={rowsForm}
@@ -3393,23 +3423,25 @@ const teamXppmBoxData = useMemo(
   </div>
 </section>
 
-<section className="mb-8">
-  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-    <ProbabilityBars
-      title="Titelkans op basis van ELO"
-      rows={titleAndTop5Odds.rowsTitle}
-      selected={team}
-      fillClass="bg-sky-500"
-      footer={`Monte Carlo (${MC_RUNS.toLocaleString("nl-BE")} runs, ${titleAndTop5Odds.remaining} resterende matchen)`}
-    />
-    <ProbabilityBars
-      title="Top-5 kans"
-      rows={titleAndTop5Odds.rowsTop5}
-      selected={team}
-      fillClass="bg-emerald-500"
-    />
-  </div>
-</section>
+{!seasonComplete && (
+  <section className="mb-8">
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <ProbabilityBars
+        title="Titelkans op basis van ELO"
+        rows={titleAndTop5Odds.rowsTitle}
+        selected={team}
+        fillClass="bg-sky-500"
+        footer={`Monte Carlo (${MC_RUNS.toLocaleString("nl-BE")} runs, ${titleAndTop5Odds.remaining} resterende matchen)`}
+      />
+      <ProbabilityBars
+        title="Top-5 kans"
+        rows={titleAndTop5Odds.rowsTop5}
+        selected={team}
+        fillClass="bg-emerald-500"
+      />
+    </div>
+  </section>
+)}
 
 <section className="mb-8">
   <SwapRankings data={substitutionStats} selectedTeam={team} />
@@ -3440,7 +3472,7 @@ const teamXppmBoxData = useMemo(
 
 
 
-        <section className="mb-8"><div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <section id="wedstrijdpatronen" className="mb-8 scroll-mt-4"><div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
   <HomeAwayBlock data={myHomeAway} />
   <HomeAwayBars data={myHomeAway} />
 </div>
@@ -3503,19 +3535,21 @@ const teamXppmBoxData = useMemo(
           <EloChart data={eloSeries} showOpp={showOppElo} />
         </section>
 
-        <section className="mb-10">
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-stretch">
-            <PositionDistributionCard
-              team={team}
-              rows={selectedTeamOutlook.positionRows}
-              totalRuns={MC_RUNS}
-            />
-            <RemainingProgramCard
-              team={team}
-              fixtures={selectedTeamOutlook.fixtures}
-            />
-          </div>
-        </section>
+        {!seasonComplete && (
+          <section className="mb-10">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-stretch">
+              <PositionDistributionCard
+                team={team}
+                rows={selectedTeamOutlook.positionRows}
+                totalRuns={MC_RUNS}
+              />
+              <RemainingProgramCard
+                team={team}
+                fixtures={selectedTeamOutlook.fixtures}
+              />
+            </div>
+          </section>
+        )}
 
         <section className="mb-10">
           <TeamPointsVsExpectedCard
@@ -3532,8 +3566,14 @@ const teamXppmBoxData = useMemo(
           />
         </section>
 
-        {/* Filters voor beide spelerstabellen */}
-        <section className="mb-3">
+        {/* Filters voor speleranalyse */}
+        <section id="spelers-analyse" className="mb-3 scroll-mt-4">
+          <div className="mb-4">
+            <h2 className="text-2xl font-semibold">Spelersanalyse</h2>
+            <p className="text-sm text-gray-500 mt-1">
+              Start bij modelimpact en onderlinge vergelijking; gebruik de ruwe statistieken daarna als context.
+            </p>
+          </div>
           <div className="flex items-center gap-6">
             <label className="inline-flex items-center gap-2 text-sm text-gray-800">
               <input type="checkbox" className="h-4 w-4" checked={showPlayers} onChange={e=>setShowPlayers(e.target.checked)} />
