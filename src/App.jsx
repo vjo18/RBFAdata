@@ -2649,51 +2649,85 @@ export default function App() {
   const [teamPlayerImpact, setTeamPlayerImpact] = useState(null);
   const [matchFlow, setMatchFlow] = useState(null);
   const [lineupHeatmap, setLineupHeatmap] = useState(null);
+  const [dataLoadError, setDataLoadError] = useState("");
 
 
 
   useEffect(() => {
     let alive = true;
+
+    const readJson = async (path) => {
+      const response = await fetch(path);
+      if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`);
+      return response.json();
+    };
+    const readText = async (path) => {
+      const response = await fetch(path);
+      if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`);
+      return response.text();
+    };
+
     (async () => {
-      const [
-        ts, h, ha, eb, fs, hf, ps, tp, te, rs, calendarCsv, subs, supersubs, teamImpact, flow, lineup,
-      ] = await Promise.all([
-        fetch("data/team_stats.json").then(r => r.json()),
-        fetch("data/h2h.json").then(r => r.json()),
-        fetch("data/team_homeaway.json").then(r => r.json()),
-        fetch("data/team_event_bins.json").then(r => r.json()),
-        fetch("data/team_first_scorer.json").then(r => r.json()),
-        fetch("data/team_halftime_fulltime.json").then(r => r.json()),
-        fetch("data/player_stats.json").then(r => r.json()),
-        fetch("data/team_points.json").then(r => r.json()),
-        fetch("data/team_elo.json").then(r => r.json()),
-        fetch("data/team_rapm_segments.json").then(r => r.json()),
-        fetch("data/data_team.csv").then(r => r.text()),
-        fetch("data/team_substitutions.json").then(r => r.json()),
-        fetch("data/supersubs_top10.json").then(r => r.json()),
-        fetch("data/team_player_impact.json").then(r => r.json()),
-        fetch("data/match_flow.json").then(r => r.json()),
-        fetch("data/team_lineup_heatmap.json").then(r => r.json()),
+      // Start zware detailbestanden meteen, maar blokkeer de eerste render er niet op.
+      const detailPromise = Promise.allSettled([
+        readJson("data/team_rapm_segments.json"),
+        readJson("data/match_flow.json"),
+        readJson("data/team_lineup_heatmap.json"),
       ]);
 
+      try {
+        const [
+          ts, h, ha, eb, fs, hf, ps, tp, te, calendarCsv, subs, supersubs, teamImpact,
+        ] = await Promise.all([
+          readJson("data/team_stats.json"),
+          readJson("data/h2h.json"),
+          readJson("data/team_homeaway.json"),
+          readJson("data/team_event_bins.json"),
+          readJson("data/team_first_scorer.json"),
+          readJson("data/team_halftime_fulltime.json"),
+          readJson("data/player_stats.json"),
+          readJson("data/team_points.json"),
+          readJson("data/team_elo.json"),
+          readText("data/data_team.csv"),
+          readJson("data/team_substitutions.json"),
+          readJson("data/supersubs_top10.json"),
+          readJson("data/team_player_impact.json"),
+        ]);
+
+        if (!alive) return;
+        setTeamStats(ts);
+        setH2H(h);
+        setHomeAway(ha);
+        setEventBins(eb);
+        setFirstScorer(fs);
+        setHtFt(hf);
+        setPlayerStats(ps);
+        setTeamPoints(tp);
+        setEloMap(te);
+        setCalendarRows(parseCsv(calendarCsv));
+        setSubstitutionStats(subs);
+        setSupersubsTop10(supersubs || []);
+        setTeamPlayerImpact(teamImpact);
+        setDataLoadError("");
+      } catch (error) {
+        if (!alive) return;
+        console.error("Kerngegevens dashboard konden niet laden:", error);
+        setDataLoadError("De kerngegevens konden niet volledig worden geladen. Herlaad de pagina of controleer de build-output.");
+      }
+
+      const [segmentsResult, flowResult, lineupResult] = await detailPromise;
       if (!alive) return;
-      setTeamStats(ts);
-      setH2H(h);
-      setHomeAway(ha);
-      setEventBins(eb);
-      setFirstScorer(fs);
-      setHtFt(hf);
-      setPlayerStats(ps);
-      setTeamPoints(tp);
-      setEloMap(te);
-      setRapmSegments(rs);
-      setCalendarRows(parseCsv(calendarCsv));
-      setSubstitutionStats(subs);
-      setSupersubsTop10(supersubs || []);
-      setTeamPlayerImpact(teamImpact);
-      setMatchFlow(flow);
-      setLineupHeatmap(lineup);
+
+      if (segmentsResult.status === "fulfilled") setRapmSegments(segmentsResult.value);
+      else console.warn("RAPM-segmenten konden niet laden:", segmentsResult.reason);
+
+      if (flowResult.status === "fulfilled") setMatchFlow(flowResult.value);
+      else console.warn("Match-flow kon niet laden:", flowResult.reason);
+
+      if (lineupResult.status === "fulfilled") setLineupHeatmap(lineupResult.value);
+      else console.warn("Basiselftal-heatmap kon niet laden:", lineupResult.reason);
     })();
+
     return () => { alive = false; };
   }, []);
 
@@ -3388,6 +3422,12 @@ const teamXppmBoxData = useMemo(
             </div>
           </div>
         </header>
+
+        {dataLoadError && (
+          <div className="mb-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+            {dataLoadError}
+          </div>
+        )}
 
         <section className="mb-6">
           <div className="rounded-2xl p-4 bg-white shadow-sm ring-1 ring-black/5">
