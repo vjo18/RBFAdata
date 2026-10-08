@@ -3355,8 +3355,18 @@ const teamXppmBoxData = useMemo(
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white text-gray-900">
       <div className="max-w-screen-2xl mx-auto px-6 py-8">
         <header className="mb-6">
-          <h1 className="text-3xl font-semibold">P1 West-Vlaanderen 2025-2026</h1>
-          <p className="text-gray-500">Selecteer een team om het overzicht te tonen.</p>
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <div className="text-xs uppercase tracking-[0.18em] text-sky-700 font-semibold">Analyse & scouting</div>
+              <h1 className="text-3xl font-semibold mt-1">P1 West-Vlaanderen 2025–2026</h1>
+              <p className="text-gray-500 mt-1">
+                Volledig seizoen · ploegdiagnose, tegenstanderanalyse en competitiebrede spelersscouting.
+              </p>
+            </div>
+            <div className="text-xs text-gray-500 rounded-full border border-gray-200 bg-white px-3 py-1.5">
+              30 speeldagen · 240 wedstrijden
+            </div>
+          </div>
         </header>
 
         <section className="mb-6">
@@ -3586,30 +3596,16 @@ const teamXppmBoxData = useMemo(
           </div>
         </section>
 
-        <section className="mb-8">
-          <PlayerStatsTable rows={myPlayersFiltered} />
-        </section>
-
-        <section className="mb-10">
-          <PlayerStatsTableLast5 rows={myPlayersFiltered} />
-        </section>
-
         <section className="mb-10">
           <TeamPlayerImpactComparison data={teamPlayerImpact} team={team} />
         </section>
 
         <section className="mb-10">
-          <RapmSegmentsHeatmap
-            data={myRapmSegments}
-            team={team}
-            impactPlayers={robustImpactPlayers}
-          />
-        </section>
-
-
-        <section className="mb-10">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-lg font-semibold">Speelminuten & efficiëntie</h3>
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+            <div>
+              <h3 className="text-lg font-semibold">Speelminuten & impact</h3>
+              <p className="text-xs text-gray-500 mt-1">Zoek spelers die impact combineren met voldoende volume.</p>
+            </div>
             <label className="text-sm text-gray-700 flex items-center gap-2">
               Y-as:
               <select
@@ -3633,7 +3629,26 @@ const teamXppmBoxData = useMemo(
         </section>
 
         <section className="mb-10">
-          <h3 className="text-lg font-semibold mb-3">Top 10 — spelersstatistieken (alle ploegen)</h3>
+          <RapmSegmentsHeatmap
+            data={myRapmSegments}
+            team={team}
+            impactPlayers={robustImpactPlayers}
+          />
+        </section>
+
+        <section className="mb-8">
+          <PlayerStatsTable rows={myPlayersFiltered} />
+        </section>
+
+        <section className="mb-10">
+          <PlayerStatsTableLast5 rows={myPlayersFiltered} />
+        </section>
+
+        <section className="mb-10">
+          <h3 className="text-lg font-semibold mb-1">Klassieke league leaderboards</h3>
+          <p className="text-xs text-gray-500 mb-3">
+            Gebruik deze voor productie en discipline; combineer ze met de impactshortlist bovenaan voor scouting.
+          </p>
           <Leaderboards data={leaderboards} selectedTeam={team} supersubs={supersubsTop10} />
         </section>
 
