@@ -47,7 +47,7 @@ export default function StartingXIHeatmap({ data, team }) {
                       className="px-1.5 py-2 text-center border-b border-gray-200 min-w-16"
                       title={`${match.date} · ${match.venue === "home" ? "thuis" : "uit"} tegen ${match.opponent} · ${match.score || ""}`}
                     >
-                      <div>SD {match.round}</div>
+                      <div>M{match.round}</div>
                       <div className="font-normal text-[10px] text-gray-400">
                         {match.venue === "home" ? "T" : "U"}
                       </div>
