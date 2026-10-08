@@ -1988,9 +1988,9 @@ function PlayerRapmTable({ rows, minMinutes }) {
       const rapmSe  = toNum(r.RAPM_SE_per90 ?? r.RAPM_SE);
       const rapmZ   = toNum(r.RAPM_z);
 
-      const xppm    = toNum(r["xPts-impact_per90"] ?? r["XPPM_per90"]);
-      const xppmSe  = toNum(r["xPts-impact_SE"] ?? r["xPts-impact_SE_per90"] ?? r["XPPM_SE"]);
-      const xppmZ   = toNum(r["xPts-impact_z"] ?? r["XPPM_z"]);
+      const xppm    = toNum(r["xPPM_per90"] ?? r["XPPM_per90"]);
+      const xppmSe  = toNum(r["xPPM_SE"] ?? r["xPPM_SE_per90"] ?? r["XPPM_SE"]);
+      const xppmZ   = toNum(r["xPPM_z"] ?? r["XPPM_z"]);
 
       const mins    = toNum(r.Speelminuten ?? r.Minutes);
 
@@ -2679,10 +2679,10 @@ export default function App() {
         RAPM_CI_low: imp.rapmCiLow,
         RAPM_CI_high: imp.rapmCiHigh,
         RAPM_sign_stability: imp.rapmStability,
-        xPts-impact_per90: imp.xPtsPer90,
-        xPts-impact_CI_low: imp.xPtsCiLow,
-        xPts-impact_CI_high: imp.xPtsCiHigh,
-        xPts-impact_sign_stability: imp.xPtsStability,
+        xPPM_per90: imp.xPtsPer90,
+        xPPM_CI_low: imp.xPtsCiLow,
+        xPPM_CI_high: imp.xPtsCiHigh,
+        xPPM_sign_stability: imp.xPtsStability,
       };
     });
   }, [playerStats, team, robustImpactPlayers]);
@@ -3283,14 +3283,14 @@ const teamXppmBoxData = useMemo(() => {
     const vals = arr
       .filter((p) => {
         const mins = Number(p.Speelminuten ?? p["Minutes"] ?? 0);
-        const xppm = Number(p.xPts-impact_per90 ?? p["xPts-impact_per90"] ?? 0);
+        const xppm = Number(p.xPPM_per90 ?? p["xPPM_per90"] ?? 0);
         return (
           Number.isFinite(mins) &&
           mins >= minMinutesForRapm &&
           Number.isFinite(xppm)
         );
       })
-      .map((p) => Number(p.xPts-impact_per90 ?? p["xPts-impact_per90"]))
+      .map((p) => Number(p.xPPM_per90 ?? p["xPPM_per90"]))
       .sort((a, b) => a - b);
 
     if (!vals.length) continue;
