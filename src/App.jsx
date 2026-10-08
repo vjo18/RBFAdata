@@ -3399,6 +3399,7 @@ const teamXppmBoxData = useMemo(
           firstScorer={firstScorer}
           substitutionStats={substitutionStats}
           teamPlayerImpact={teamPlayerImpact}
+          playerStats={playerStats}
         />
 
         <section id="detailanalyse" className="mb-5 scroll-mt-4">
