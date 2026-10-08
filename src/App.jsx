@@ -3228,8 +3228,8 @@ const minMinutesForRapm = useMemo(() => {
 }, [playerStats]);
 
 
-    // RAPM-boxplotdata per team (alleen spelers met >=600 min)
-const buildImpactBoxData = (metricKey) => {
+// Robuuste impact-boxplots per team, standaard vanaf de betrouwbaarheidsgrens.
+const buildImpactBoxData = React.useCallback((metricKey) => {
   const teamsData = teamPlayerImpact?.teams || {};
   const out = [];
   const threshold = Number(teamPlayerImpact?.meta?.reliableMinutes ?? minMinutesForRapm ?? 0);
@@ -3263,16 +3263,16 @@ const buildImpactBoxData = (metricKey) => {
   }
 
   return out;
-};
+}, [teamPlayerImpact, minMinutesForRapm]);
 
 const teamRapmBoxData = useMemo(
   () => buildImpactBoxData("rapmPer90"),
-  [teamPlayerImpact, minMinutesForRapm]
+  [buildImpactBoxData]
 );
 
 const teamXppmBoxData = useMemo(
   () => buildImpactBoxData("xPtsPer90"),
-  [teamPlayerImpact, minMinutesForRapm]
+  [buildImpactBoxData]
 );
 
 
