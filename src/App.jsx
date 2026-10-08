@@ -313,7 +313,7 @@ const SwapRankings = ({ data, selectedTeam }) => {
       />
 
       <TableCard
-        title="Ranglijst — doelsaldo na wissel (10' & 20')"
+        title="Doelsaldo na wisselmomenten (10' & 20')"
         headers={[
           { key: "rank", label: "#", className: "px-3 py-2 text-left w-10" },
           { key: "team", label: "Team", className: "px-3 py-2 text-left" },
@@ -338,6 +338,10 @@ const SwapRankings = ({ data, selectedTeam }) => {
           </tr>
         )}
       />
+      <p className="md:col-span-2 text-[11px] text-gray-500 px-1">
+        Doelsaldo na een wisselmoment is observationeel. Δ vergelijkt die periode met de eigen seizoensbaseline
+        en mag niet als causaal effect van de wissel of trainer worden gelezen.
+      </p>
     </div>
   );
 };
@@ -613,7 +617,7 @@ const TeamRapmBoxplots = ({ dataRapm, dataXppm, selectedTeam, minMinutes }) => {
       <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <h3 className="text-lg font-semibold">
-            Teamsterkte &amp; diepte — {metric}
+            Verdeling spelersimpact — {metric}
           </h3>
           <div className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-1 py-0.5 text-[11px]">
             <button
@@ -643,8 +647,7 @@ const TeamRapmBoxplots = ({ dataRapm, dataXppm, selectedTeam, minMinutes }) => {
           </div>
         </div>
         <span className="text-xs text-gray-500">
-          Boxplots per team ({metric}_per90, min. {Math.round(minMinutes ?? 0)}{" "}
-          min)
+          Spelers per team · min. {Math.round(minMinutes ?? 0)} min
         </span>
       </div>
 
@@ -1349,9 +1352,9 @@ function FirstScorerCard({ teamName, rec }) {
   return (
     <div className="rounded-2xl bg-white shadow-sm ring-1 ring-black/5 overflow-hidden">
       <div className="px-4 py-3 border-b border-gray-100">
-        <h3 className="text-lg font-semibold">First scorer & impact op resultaat</h3>
+        <h3 className="text-lg font-semibold">Eerste goal & daaropvolgend resultaat</h3>
         <p className="mt-1 text-xs text-gray-600">
-          Gebaseerd op {m} wedstrijden. First scorer = ploeg die het eerste doelpunt maakt.
+          Gebaseerd op {m} wedstrijden. Dit toont samenhang, niet het causale effect van de eerste goal.
         </p>
       </div>
 
