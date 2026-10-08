@@ -1745,6 +1745,231 @@ function PlayerStatsTableLast5({ rows }) {
   );
 }
 
+
+function TeamPlayerImpactComparison({ data, team }) {
+  const teamData = data?.teams?.[team] || null;
+  const meta = data?.meta || {};
+  const allPlayers = teamData?.players || [];
+  const [showAll, setShowAll] = React.useState(false);
+  const [playerA, setPlayerA] = React.useState("");
+  const [playerB, setPlayerB] = React.useState("");
+
+  const reliablePlayers = React.useMemo(
+    () => allPlayers.filter((p) => p.reliable),
+    [allPlayers]
+  );
+  const shownPlayers = showAll ? allPlayers : (reliablePlayers.length >= 2 ? reliablePlayers : allPlayers);
+
+  React.useEffect(() => {
+    const pool = reliablePlayers.length >= 2 ? reliablePlayers : allPlayers;
+    setPlayerA(pool[0]?.name || "");
+    setPlayerB(pool[1]?.name || "");
+    setShowAll(false);
+  }, [team, allPlayers, reliablePlayers]);
+
+  if (!teamData || !allPlayers.length) return null;
+
+  const getComparison = (aName, bName) => {
+    if (!aName || !bName || aName === bName) return null;
+    const direct = (teamData.comparisons || []).find((r) => r.a === aName && r.b === bName);
+    if (direct) return direct;
+    const reverse = (teamData.comparisons || []).find((r) => r.a === bName && r.b === aName);
+    if (!reverse) return null;
+    return {
+      a: aName,
+      b: bName,
+      rapmDiff: -Number(reverse.rapmDiff || 0),
+      rapmProbAGreater: 1 - Number(reverse.rapmProbAGreater || 0),
+      rapmDiffCiLow: -Number(reverse.rapmDiffCiHigh || 0),
+      rapmDiffCiHigh: -Number(reverse.rapmDiffCiLow || 0),
+      xPtsDiff: -Number(reverse.xPtsDiff || 0),
+      xPtsProbAGreater: 1 - Number(reverse.xPtsProbAGreater || 0),
+      xPtsDiffCiLow: -Number(reverse.xPtsDiffCiHigh || 0),
+      xPtsDiffCiHigh: -Number(reverse.xPtsDiffCiLow || 0),
+    };
+  };
+
+  const comparison = getComparison(playerA, playerB);
+  const playerMap = new Map(allPlayers.map((p) => [p.name, p]));
+  const aInfo = playerMap.get(playerA);
+  const bInfo = playerMap.get(playerB);
+
+  const signed = (v, digits = 3) => {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return "—";
+    return `${n > 0 ? "+" : ""}${n.toFixed(digits)}`;
+  };
+  const pct = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? `${Math.round(n * 100)}%` : "—";
+  };
+  const range = (lo, hi) => {
+    const a = Number(lo), b = Number(hi);
+    return Number.isFinite(a) && Number.isFinite(b)
+      ? `${signed(a)} tot ${signed(b)}`
+      : "—";
+  };
+  const signalText = (prob) => {
+    const p = Number(prob);
+    if (!Number.isFinite(p)) return "Onvoldoende data";
+    const confidence = Math.max(p, 1 - p);
+    if (confidence >= 0.95) return "Sterk verschil";
+    if (confidence >= 0.8) return "Duidelijke aanwijzing";
+    if (confidence >= 0.65) return "Voorzichtige aanwijzing";
+    return "Geen duidelijk verschil";
+  };
+
+  const ComparisonCard = ({ title, diff, prob, lo, hi }) => {
+    const p = Math.max(0, Math.min(1, Number(prob) || 0.5));
+    return (
+      <div className="rounded-xl border border-gray-200 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold">{title}</div>
+            <div className="text-2xl font-semibold tabular-nums mt-1">{signed(diff)}</div>
+            <div className="text-xs text-gray-500 mt-1">95%-interval verschil: {range(lo, hi)}</div>
+          </div>
+          <div className="text-right">
+            <div className="text-xs text-gray-500">P({playerA} &gt; {playerB})</div>
+            <div className="text-xl font-semibold">{pct(p)}</div>
+          </div>
+        </div>
+        <div className="mt-3 h-3 rounded-full bg-gray-100 overflow-hidden flex">
+          <div className="bg-emerald-500 h-3" style={{ width: `${(p * 100).toFixed(1)}%` }} />
+          <div className="bg-slate-300 h-3" style={{ width: `${((1 - p) * 100).toFixed(1)}%` }} />
+        </div>
+        <div className="mt-1 flex justify-between text-[11px] text-gray-500">
+          <span>{playerA}: {pct(p)}</span>
+          <span>{playerB}: {pct(1 - p)}</span>
+        </div>
+        <div className="mt-2 text-xs font-medium text-gray-700">{signalText(p)}</div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="rounded-2xl bg-white shadow-sm ring-1 ring-black/5 overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-lg font-semibold">Team-impact — onderlinge spelersvergelijking</h3>
+          <p className="text-xs text-gray-500 mt-1 max-w-3xl">
+            Vergelijk spelers binnen dezelfde ploeg. De team-impactscore combineert totale,
+            betrouwbaarheid-gecorrigeerde RAPM- en xPts-impact. Head-to-head kansen komen uit
+            dezelfde {meta.bootstrapRuns || 200} volledige wedstrijd-bootstraps.
+          </p>
+        </div>
+        <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+          <input
+            type="checkbox"
+            className="h-4 w-4"
+            checked={showAll}
+            onChange={(e) => setShowAll(e.target.checked)}
+          />
+          Toon ook &lt; {Math.round(meta.reliableMinutes || 1080)} min.
+        </label>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-sm">
+          <thead className="bg-gray-50 text-gray-600">
+            <tr>
+              <th className="px-3 py-2 text-left">#</th>
+              <th className="px-3 py-2 text-left">Speler</th>
+              <th className="px-3 py-2 text-right">Min.</th>
+              <th className="px-3 py-2 text-right">Team-impact</th>
+              <th className="px-3 py-2 text-right">RAPM / 90</th>
+              <th className="px-3 py-2 text-right">95%-interval</th>
+              <th className="px-3 py-2 text-right">Stab.</th>
+              <th className="px-3 py-2 text-right">xPts / 90</th>
+              <th className="px-3 py-2 text-right">95%-interval</th>
+              <th className="px-3 py-2 text-right">Stab.</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shownPlayers.map((p, idx) => (
+              <tr key={p.name} className="hover:bg-gray-50">
+                <td className="px-3 py-2">{idx + 1}</td>
+                <td className="px-3 py-2 font-medium whitespace-nowrap">
+                  {p.name}
+                  {!p.reliable && <span className="ml-2 text-[10px] text-amber-600">kleine steekproef</span>}
+                </td>
+                <td className="px-3 py-2 text-right">{Math.round(Number(p.minutes) || 0)}</td>
+                <td className="px-3 py-2 text-right font-semibold">{Number(p.teamImpactScore).toFixed(1)}</td>
+                <td className="px-3 py-2 text-right">{signed(p.rapmPer90)}</td>
+                <td className="px-3 py-2 text-right whitespace-nowrap text-xs">{range(p.rapmCiLow, p.rapmCiHigh)}</td>
+                <td className="px-3 py-2 text-right">{pct(p.rapmStability)}</td>
+                <td className="px-3 py-2 text-right">{signed(p.xPtsPer90)}</td>
+                <td className="px-3 py-2 text-right whitespace-nowrap text-xs">{range(p.xPtsCiLow, p.xPtsCiHigh)}</td>
+                <td className="px-3 py-2 text-right">{pct(p.xPtsStability)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="border-t border-gray-100 p-4">
+        <div className="flex flex-wrap gap-4 items-end mb-4">
+          <label className="text-sm text-gray-700">
+            <span className="block text-xs text-gray-500 mb-1">Speler A</span>
+            <select
+              className="rounded-lg border border-gray-200 px-3 py-2 min-w-52"
+              value={playerA}
+              onChange={(e) => setPlayerA(e.target.value)}
+            >
+              {allPlayers.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+            </select>
+          </label>
+          <label className="text-sm text-gray-700">
+            <span className="block text-xs text-gray-500 mb-1">Speler B</span>
+            <select
+              className="rounded-lg border border-gray-200 px-3 py-2 min-w-52"
+              value={playerB}
+              onChange={(e) => setPlayerB(e.target.value)}
+            >
+              {allPlayers.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+            </select>
+          </label>
+          {aInfo && bInfo && (
+            <div className="text-xs text-gray-500">
+              {playerA}: {Math.round(aInfo.minutes)} min. · {playerB}: {Math.round(bInfo.minutes)} min.
+            </div>
+          )}
+        </div>
+
+        {playerA === playerB ? (
+          <p className="text-sm text-amber-700">Kies twee verschillende spelers.</p>
+        ) : comparison ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <ComparisonCard
+              title="RAPM-verschil / 90"
+              diff={comparison.rapmDiff}
+              prob={comparison.rapmProbAGreater}
+              lo={comparison.rapmDiffCiLow}
+              hi={comparison.rapmDiffCiHigh}
+            />
+            <ComparisonCard
+              title="xPts-verschil / 90"
+              diff={comparison.xPtsDiff}
+              prob={comparison.xPtsProbAGreater}
+              lo={comparison.xPtsDiffCiLow}
+              hi={comparison.xPtsDiffCiHigh}
+            />
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500">Geen vergelijking beschikbaar voor deze combinatie.</p>
+        )}
+
+        <div className="mt-4 text-[11px] leading-relaxed text-gray-500 space-y-1">
+          <p>• Een kans van 84% betekent: in 84% van de bootstrap-herberekeningen kwam speler A hoger uit dan speler B.</p>
+          <p>• Dit is een modelcontrast, geen causale individuele rating. Spelers die bijna altijd samen spelen zijn moeilijker van elkaar te onderscheiden.</p>
+          <p>• Standaard worden alleen spelers met minstens {Math.round(meta.reliableMinutes || 1080)} minuten getoond.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 function PlayerRapmTable({ rows, minMinutes }) {
   const [sortKey, setSortKey] = React.useState("rapm");
   const [sortDir, setSortDir] = React.useState("desc");
@@ -2351,6 +2576,7 @@ export default function App() {
   const [calendarRows, setCalendarRows] = useState([]);
   const [substitutionStats, setSubstitutionStats] = useState(null);
   const [supersubsTop10, setSupersubsTop10] = useState([]);
+  const [teamPlayerImpact, setTeamPlayerImpact] = useState(null);
 
 
 
@@ -2358,7 +2584,7 @@ export default function App() {
     let alive = true;
     (async () => {
       const [
-        ts, h, ha, eb, fs, hf, ps, tp, te, rs, calendarCsv, subs, supersubs,
+        ts, h, ha, eb, fs, hf, ps, tp, te, rs, calendarCsv, subs, supersubs, teamImpact,
       ] = await Promise.all([
         fetch("data/team_stats.json").then(r => r.json()),
         fetch("data/h2h.json").then(r => r.json()),
@@ -2373,6 +2599,7 @@ export default function App() {
         fetch("data/data_team.csv").then(r => r.text()),
         fetch("data/team_substitutions.json").then(r => r.json()),
         fetch("data/supersubs_top10.json").then(r => r.json()),
+        fetch("data/team_player_impact.json").then(r => r.json()),
       ]);
 
       if (!alive) return;
@@ -2389,6 +2616,7 @@ export default function App() {
       setCalendarRows(parseCsv(calendarCsv));
       setSubstitutionStats(subs);
       setSupersubsTop10(supersubs || []);
+      setTeamPlayerImpact(teamImpact);
     })();
     return () => { alive = false; };
   }, []);
@@ -3282,7 +3510,11 @@ const teamXppmBoxData = useMemo(() => {
           <PlayerStatsTableLast5 rows={myPlayersFiltered} />
         </section>
 
-        {/* NIEUW: RAPM-tabel met betrouwbaarheidsinterval */}
+        <section className="mb-10">
+          <TeamPlayerImpactComparison data={teamPlayerImpact} team={team} />
+        </section>
+
+        {/* RAPM-tabel met betrouwbaarheidsinterval */}
         <section className="mb-10">
           <PlayerRapmTable rows={myPlayersFiltered} minMinutes={minMinutesForRapm} />
         </section>
