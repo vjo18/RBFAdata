@@ -2,6 +2,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import "./App.css";
 import AnalystDashboard from "./AnalystDashboard";
+import MatchFlowSection from "./MatchFlowSection";
+import StartingXIHeatmap from "./StartingXIHeatmap";
 import {
   LineChart, Line,
   ScatterChart, Scatter,
@@ -2645,6 +2647,8 @@ export default function App() {
   const [substitutionStats, setSubstitutionStats] = useState(null);
   const [supersubsTop10, setSupersubsTop10] = useState([]);
   const [teamPlayerImpact, setTeamPlayerImpact] = useState(null);
+  const [matchFlow, setMatchFlow] = useState(null);
+  const [lineupHeatmap, setLineupHeatmap] = useState(null);
 
 
 
@@ -2652,7 +2656,7 @@ export default function App() {
     let alive = true;
     (async () => {
       const [
-        ts, h, ha, eb, fs, hf, ps, tp, te, rs, calendarCsv, subs, supersubs, teamImpact,
+        ts, h, ha, eb, fs, hf, ps, tp, te, rs, calendarCsv, subs, supersubs, teamImpact, flow, lineup,
       ] = await Promise.all([
         fetch("data/team_stats.json").then(r => r.json()),
         fetch("data/h2h.json").then(r => r.json()),
@@ -2668,6 +2672,8 @@ export default function App() {
         fetch("data/team_substitutions.json").then(r => r.json()),
         fetch("data/supersubs_top10.json").then(r => r.json()),
         fetch("data/team_player_impact.json").then(r => r.json()),
+        fetch("data/match_flow.json").then(r => r.json()),
+        fetch("data/team_lineup_heatmap.json").then(r => r.json()),
       ]);
 
       if (!alive) return;
@@ -2685,6 +2691,8 @@ export default function App() {
       setSubstitutionStats(subs);
       setSupersubsTop10(supersubs || []);
       setTeamPlayerImpact(teamImpact);
+      setMatchFlow(flow);
+      setLineupHeatmap(lineup);
     })();
     return () => { alive = false; };
   }, []);
@@ -3500,6 +3508,9 @@ const teamXppmBoxData = useMemo(
   <HomeAwayBars data={myHomeAway} />
 </div>
 </section>
+
+        <MatchFlowSection data={matchFlow} selectedTeam={team} />
+
         <section className="mb-10"><EventHeatmap rec={myEvent} /></section>
 
         <section className="mb-10">
@@ -3612,6 +3623,8 @@ const teamXppmBoxData = useMemo(
         <section className="mb-10">
           <TeamPlayerImpactComparison data={teamPlayerImpact} team={team} />
         </section>
+
+        <StartingXIHeatmap data={lineupHeatmap} team={team} />
 
         <section className="mb-10">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
