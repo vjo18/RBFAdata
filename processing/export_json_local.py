@@ -11,6 +11,8 @@ from build_player_stats import (
     MATCH_EVENTS,
     load_calendar,
 )
+from match_flow import build_match_flow
+from lineup_heatmap import build_lineup_heatmap
 
 # =========================== GOOGLE SHEETS (CSV) ============================
 
@@ -1370,10 +1372,13 @@ def main():
     export_substitution_stats_all(x, od / "team_substitutions.json")
     export_supersubs_top10(x, od / "supersubs_top10.json")
     export_data_team_csv(od / "data_team.csv")
+    build_match_flow(output_path=od / "match_flow.json")
+    build_lineup_heatmap(output_path=od / "team_lineup_heatmap.json")
     print(
         "OK → team_stats, h2h, homeaway, event_bins, first_scorer, "
         "halftime_fulltime, player_stats, team_points, team_elo, "
-        "team_rapm_segments, team_substitutions, supersubs_top10, data_team.csv"
+        "team_rapm_segments, team_substitutions, supersubs_top10, data_team.csv, "
+        "match_flow, team_lineup_heatmap"
     )
 
 
