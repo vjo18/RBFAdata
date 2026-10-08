@@ -299,7 +299,7 @@ function SquadStructureCard({ team, playerStats, teamPlayerImpact }) {
 }
 
 
-function OpponentScout({ team, profiles }) {
+function OpponentScout({ team, profiles, teamPlayerImpact }) {
   const [opponentChoice, setOpponentChoice] = useState("");
   const opponents = useMemo(
     () => profiles.filter((p) => p.team !== team),
@@ -322,6 +322,14 @@ function OpponentScout({ team, profiles }) {
   const oppMetrics = compareKeys.map((k) => opp.metrics[k]).filter(Boolean);
   const oppStrengths = [...oppMetrics].sort((a, b) => b.quality - a.quality).slice(0, 2);
   const oppWeaknesses = [...oppMetrics].sort((a, b) => a.quality - b.quality).slice(0, 2);
+  const oppImpactPlayers = (teamPlayerImpact?.teams?.[opponent]?.players || [])
+    .filter((p) => p.reliable)
+    .slice(0, 3);
+  const oppGoalThreats = (teamPlayerImpact?.teams?.[opponent]?.players || [])
+    .filter((p) => p.reliable)
+    .slice()
+    .sort((a, b) => num(b.goals) - num(a.goals) || num(b.minutes) - num(a.minutes))
+    .slice(0, 3);
 
   return (
     <div className="rounded-2xl bg-white shadow-sm ring-1 ring-black/5 overflow-hidden">
@@ -382,6 +390,42 @@ function OpponentScout({ team, profiles }) {
             <ul className="mt-2 space-y-1 text-sm">
               {oppWeaknesses.map((m) => <li key={m.key}>• {m.label}: #{m.rank} in de reeks</li>)}
             </ul>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+          <div className="rounded-xl border border-sky-100 bg-sky-50 p-3">
+            <div className="text-xs font-semibold text-sky-800">Impactspelers om te bekijken</div>
+            <div className="mt-2 space-y-2">
+              {oppImpactPlayers.map((p, i) => (
+                <div key={p.name} className="grid grid-cols-[1.3rem_1fr_auto] gap-2 items-center text-sm">
+                  <span className="text-gray-400">{i + 1}</span>
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{p.name}</div>
+                    <div className="text-[10px] text-gray-500">{Math.round(num(p.minutes))} min · {num(p.goals)} goals</div>
+                  </div>
+                  <span className="font-semibold tabular-nums">{fmt(p.teamImpactScore, 1)}</span>
+                </div>
+              ))}
+              {!oppImpactPlayers.length && <span className="text-xs text-gray-400">Geen betrouwbare impactdata.</span>}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-gray-200 bg-white p-3">
+            <div className="text-xs font-semibold text-gray-700">Goal threats</div>
+            <div className="mt-2 space-y-2">
+              {oppGoalThreats.map((p, i) => (
+                <div key={p.name} className="grid grid-cols-[1.3rem_1fr_auto] gap-2 items-center text-sm">
+                  <span className="text-gray-400">{i + 1}</span>
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{p.name}</div>
+                    <div className="text-[10px] text-gray-500">{Math.round(num(p.minutes))} min.</div>
+                  </div>
+                  <span className="font-semibold tabular-nums">{num(p.goals)} g</span>
+                </div>
+              ))}
+              {!oppGoalThreats.length && <span className="text-xs text-gray-400">Geen betrouwbare spelersdata.</span>}
+            </div>
           </div>
         </div>
       </div>
@@ -670,7 +714,7 @@ export default function AnalystDashboard({
       <TeamProfileCard profile={profile} />
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <OpponentScout team={team} profiles={profiles} />
+        <OpponentScout team={team} profiles={profiles} teamPlayerImpact={teamPlayerImpact} />
         <SquadStructureCard
           team={team}
           playerStats={playerStats}
