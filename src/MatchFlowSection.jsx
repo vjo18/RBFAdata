@@ -354,8 +354,8 @@ export default function MatchFlowSection({ data, selectedTeam }) {
         <MatchScoreTimeline match={selectedMatch} team={selectedTeam} checkpoint={checkpoint} />
       </Panel>
       <p className="mt-2 text-xs text-gray-400">
-        Puntensaldo na ${checkpoint}′ = eindpunten minus punten op 75′, per wedstrijd opgeteld.
-        Een doelpunt exact op 75′ telt bij de stand op 75′.
+        Puntensaldo na {checkpoint}′ = eindpunten minus punten op {checkpoint}′, per wedstrijd opgeteld.
+        Een doelpunt exact op {checkpoint}′ telt bij de stand op {checkpoint}′.
         Scoreminuten zijn benaderd met officiële doelpuntminuten; blessuretijd wordt samengevoegd met minuut 90.
       </p>
     </section>
