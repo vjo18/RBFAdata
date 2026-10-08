@@ -537,6 +537,9 @@ function percentileMap(rows, key) {
 function LeagueScoutingBoard({ teamPlayerImpact, selectedTeam }) {
   const [sortKey, setSortKey] = useState("mvp");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [teamFilter, setTeamFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const [robustOnly, setRobustOnly] = useState(false);
   const [limit, setLimit] = useState(15);
 
   const players = useMemo(() => {
@@ -580,8 +583,13 @@ function LeagueScoutingBoard({ teamPlayerImpact, selectedTeam }) {
     }));
   }, [teamPlayerImpact]);
 
+  const teamOptions = [...new Set(players.map((p) => p.team))].sort((a, b) => a.localeCompare(b));
+  const searchNeedle = search.trim().toLocaleLowerCase("nl-BE");
   const filtered = players
     .filter((p) => typeFilter === "all" || (typeFilter === "keeper" ? String(p.type).toLowerCase() === "keeper" : String(p.type).toLowerCase() !== "keeper"))
+    .filter((p) => teamFilter === "all" || p.team === teamFilter)
+    .filter((p) => !searchNeedle || p.name.toLocaleLowerCase("nl-BE").includes(searchNeedle))
+    .filter((p) => !robustOnly || p.strongSignal)
     .sort((a, b) => {
       if (sortKey === "rapm") return b.rapmTotalAdj - a.rapmTotalAdj;
       if (sortKey === "xpts") return b.xTotalAdj - a.xTotalAdj;
@@ -601,7 +609,24 @@ function LeagueScoutingBoard({ teamPlayerImpact, selectedTeam }) {
             stabiliteitsgecorrigeerde RAPM (45%) en xPts-impact (55%).
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
+          <input
+            type="search"
+            className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm min-w-44"
+            placeholder="Zoek speler…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label="Zoek speler"
+          />
+          <select className="rounded-lg border border-gray-200 px-2 py-1.5 text-sm" value={teamFilter} onChange={(e) => setTeamFilter(e.target.value)}>
+            <option value="all">Alle ploegen</option>
+            {teamOptions.map((team) => <option key={team} value={team}>{team}</option>)}
+          </select>
+          <select className="rounded-lg border border-gray-200 px-2 py-1.5 text-sm" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+            <option value="all">Alle spelers</option>
+            <option value="field">Veldspelers</option>
+            <option value="keeper">Keepers</option>
+          </select>
           <select className="rounded-lg border border-gray-200 px-2 py-1.5 text-sm" value={sortKey} onChange={(e) => setSortKey(e.target.value)}>
             <option value="mvp">MVP-index</option>
             <option value="rapm">Totale RAPM-impact</option>
@@ -609,16 +634,15 @@ function LeagueScoutingBoard({ teamPlayerImpact, selectedTeam }) {
             <option value="goals">Goals</option>
             <option value="goals90">Goals / 90</option>
           </select>
-          <select className="rounded-lg border border-gray-200 px-2 py-1.5 text-sm" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
-            <option value="all">Alle spelers</option>
-            <option value="field">Veldspelers</option>
-            <option value="keeper">Keepers</option>
-          </select>
           <select className="rounded-lg border border-gray-200 px-2 py-1.5 text-sm" value={limit} onChange={(e) => setLimit(Number(e.target.value))}>
             <option value={10}>Top 10</option>
             <option value={15}>Top 15</option>
             <option value={25}>Top 25</option>
           </select>
+          <label className="inline-flex items-center gap-1.5 text-xs text-gray-600 px-1">
+            <input type="checkbox" checked={robustOnly} onChange={(e) => setRobustOnly(e.target.checked)} />
+            Alleen robuust +
+          </label>
         </div>
       </div>
 
@@ -634,6 +658,8 @@ function LeagueScoutingBoard({ teamPlayerImpact, selectedTeam }) {
               <th className="px-3 py-2 text-right">RAPM/90</th>
               <th className="px-3 py-2 text-right">xPts/90</th>
               <th className="px-3 py-2 text-right">Goals</th>
+              <th className="px-3 py-2 text-right">G/90</th>
+              <th className="px-3 py-2 text-right">Stab.</th>
               <th className="px-3 py-2 text-left">Signaal</th>
             </tr>
           </thead>
@@ -648,6 +674,8 @@ function LeagueScoutingBoard({ teamPlayerImpact, selectedTeam }) {
                 <td className="px-3 py-2 text-right">{p.rapm >= 0 ? "+" : ""}{fmt(p.rapm, 3)}</td>
                 <td className="px-3 py-2 text-right">{p.xpts >= 0 ? "+" : ""}{fmt(p.xpts, 3)}</td>
                 <td className="px-3 py-2 text-right">{p.goals}</td>
+                <td className="px-3 py-2 text-right">{fmt(p.goals90, 2)}</td>
+                <td className="px-3 py-2 text-right">{pct(100 * Math.min(p.rapmStability, p.xPtsStability), 0)}</td>
                 <td className="px-3 py-2">
                   {p.strongSignal
                     ? <span className="rounded-full bg-emerald-100 px-2 py-1 text-[11px] font-medium text-emerald-800">robuust +</span>
@@ -657,6 +685,9 @@ function LeagueScoutingBoard({ teamPlayerImpact, selectedTeam }) {
             ))}
           </tbody>
         </table>
+        {!filtered.length && (
+          <div className="px-4 py-6 text-center text-sm text-gray-500">Geen spelers voldoen aan deze filters.</div>
+        )}
       </div>
       <div className="px-4 py-3 border-t border-gray-100 text-[11px] leading-relaxed text-gray-500">
         De MVP-index is een modelgebaseerde shortlist, geen positie-onafhankelijke waarheid. De data bevat geen betrouwbare veldposities;
