@@ -470,7 +470,7 @@ const TeamPointsVsExpectedCard = ({ team, rows }) => {
   return (
     <div className="rounded-2xl bg-white shadow-sm ring-1 ring-black/5 overflow-hidden">
       <div className="px-4 py-3 border-b border-gray-100">
-        <h3 className="text-lg font-semibold">Punten evolutie vs xPts ({team})</h3>
+        <h3 className="text-lg font-semibold">Punten evolutie vs ELO-xPts ({team})</h3>
       </div>
 
       <div className="h-72 p-3">
@@ -482,7 +482,7 @@ const TeamPointsVsExpectedCard = ({ team, rows }) => {
             <Tooltip
               formatter={(value, key) => {
                 const label = key === "xPts"
-                  ? "xPts"
+                  ? "ELO-xPts"
                   : key === "projectedPoints"
                   ? "Geprojecteerde finale punten"
                   : "Punten";
@@ -513,7 +513,7 @@ const TeamPointsVsExpectedCard = ({ team, rows }) => {
             <Line
               type="monotone"
               dataKey="xPts"
-              name="xPts"
+              name="ELO-xPts"
               stroke="#6b7280"
               strokeDasharray="5 5"
               strokeWidth={2}
@@ -523,7 +523,7 @@ const TeamPointsVsExpectedCard = ({ team, rows }) => {
         </ResponsiveContainer>
       </div>
       <p className="px-4 pb-4 text-xs text-gray-400">
-        xPts: historisch op basis van expected score (3 × expected score), met extrapolatie over de resterende wedstrijden via ELO-kansen. Geprojecteerde finale punten = actuele punten + verwachte punten over resterende wedstrijden.
+        ELO-xPts = 3 × P(winst) + P(gelijk), afgeleid uit de pre-match ELO-verschillen met een draw-correctie. Dit staat los van de spelersmetric xPts-impact.
       </p>
     </div>
   );
@@ -532,7 +532,7 @@ const TeamPointsVsExpectedCard = ({ team, rows }) => {
 const ProjectedXPtsStabilityCard = ({ team, rows, stableFromMatchday }) => (
   <div className="rounded-2xl bg-white shadow-sm ring-1 ring-black/5 overflow-hidden">
     <div className="px-4 py-3 border-b border-gray-100">
-      <h3 className="text-lg font-semibold">Projectie finale xPts na elke speeldag ({team})</h3>
+      <h3 className="text-lg font-semibold">Historische projectie finale ELO-xPts na elke speeldag ({team})</h3>
     </div>
 
     <div className="h-72 p-3">
@@ -545,7 +545,7 @@ const ProjectedXPtsStabilityCard = ({ team, rows, stableFromMatchday }) => (
             formatter={(value, key) => {
               const label = key === "projectedFinalPoints"
                 ? "Geprojecteerde finale punten"
-                : "Geprojecteerde finale xPts";
+                : "Geprojecteerde finale ELO-xPts";
               return [Number(value).toFixed(2), label];
             }}
             labelFormatter={(label) => `Na speeldag ${label}`}
@@ -563,7 +563,7 @@ const ProjectedXPtsStabilityCard = ({ team, rows, stableFromMatchday }) => (
           <Line
             type="monotone"
             dataKey="projectedFinalXPts"
-            name="Geprojecteerde finale xPts"
+            name="Geprojecteerde finale ELO-xPts"
             stroke="#6b7280"
             strokeDasharray="5 5"
             strokeWidth={2}
@@ -577,7 +577,7 @@ const ProjectedXPtsStabilityCard = ({ team, rows, stableFromMatchday }) => (
       Stabiel vanaf speeldag: <span className="font-semibold">{stableFromMatchday ?? "nog niet stabiel"}</span>
     </p>
     <p className="px-4 pb-4 text-xs text-gray-400">
-      Definitie “stabiel”: wijziging ≤ 0,15 xPts gedurende 3 opeenvolgende speeldagen.
+      Definitie “stabiel”: wijziging ≤ 0,15 ELO-xPts gedurende 3 opeenvolgende speeldagen.
     </p>
   </div>
 );
@@ -3164,10 +3164,14 @@ const timingScatterData = useMemo(() => {
         }
         cumProjectedPoints = cumPoints;
 
-        const expectedScore = Number(isHome ? fx.expected_home : fx.expected_away);
-        if (Number.isFinite(expectedScore)) {
-          cumXPts += 3 * expectedScore;
-        }
+        const ownElo = Number(isHome ? fx.elo_home_before : fx.elo_away_before);
+        const oppElo = Number(isHome ? fx.elo_away_before : fx.elo_home_before);
+        const dElo = (Number.isFinite(ownElo) ? ownElo : (eloNow[team] ?? 1500))
+          - (Number.isFinite(oppElo) ? oppElo : 1500);
+        const E = 1 / (1 + 10 ** ((-dElo) / 400));
+        const pDraw = 0.30 * Math.exp(-Math.abs(dElo) / 400);
+        const pWin = (1 - pDraw) * E;
+        cumXPts += (3 * pWin) + pDraw;
       } else {
         const oppTeam = isHome ? fx.awayTeam : fx.homeTeam;
         const dElo = (eloNow[team] ?? 1500) - (eloNow[oppTeam] ?? 1500);
@@ -3230,10 +3234,18 @@ const timingScatterData = useMemo(() => {
         return sum;
       }, 0);
 
-      const cumPlayedXPts = teamFixtures.slice(0, step).reduce((sum, fx) => {
+      const cumPlayedXPts = teamFixtures.slice(0, step).reduce((sum, fx, idx) => {
         const isHome = fx.homeTeam === team;
-        const expectedScore = Number(isHome ? fx.expected_home : fx.expected_away);
-        return Number.isFinite(expectedScore) ? sum + (3 * expectedScore) : sum;
+        const ownEloRaw = Number(isHome ? fx.elo_home_before : fx.elo_away_before);
+        const oppEloRaw = Number(isHome ? fx.elo_away_before : fx.elo_home_before);
+        const oppTeam = isHome ? fx.awayTeam : fx.homeTeam;
+        const ownElo = Number.isFinite(ownEloRaw) ? ownEloRaw : eloAtStep(team, idx);
+        const oppElo = Number.isFinite(oppEloRaw) ? oppEloRaw : eloAtStep(oppTeam, idx);
+        const dElo = ownElo - oppElo;
+        const E = 1 / (1 + 10 ** ((-dElo) / 400));
+        const pDraw = 0.30 * Math.exp(-Math.abs(dElo) / 400);
+        const pWin = (1 - pDraw) * E;
+        return sum + (3 * pWin) + pDraw;
       }, 0);
 
       const projectedRemainingPoints = teamFixtures.slice(step).reduce((sum, fx) => {
