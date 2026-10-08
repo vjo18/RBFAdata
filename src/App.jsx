@@ -462,11 +462,15 @@ const RemainingProgramCard = ({ team, fixtures }) => (
   </div>
 );
 
-const TeamPointsVsExpectedCard = ({ team, rows }) => {
+const TeamPointsVsExpectedCard = ({ team, rows, showProjection = true }) => {
   const chartRows = rows || [];
   const maxY = Math.max(
     3,
-    ...chartRows.flatMap((r) => [Number(r.points), Number(r.projectedPoints), Number(r.xPts)]).filter((v) => Number.isFinite(v))
+    ...chartRows
+      .flatMap((r) => showProjection
+        ? [Number(r.points), Number(r.projectedPoints), Number(r.xPts)]
+        : [Number(r.points), Number(r.xPts)])
+      .filter((v) => Number.isFinite(v))
   );
 
   return (
@@ -502,16 +506,18 @@ const TeamPointsVsExpectedCard = ({ team, rows }) => {
               dot={false}
               connectNulls={false}
             />
-            <Line
-              type="monotone"
-              dataKey="projectedPoints"
-              name="Geprojecteerde finale punten"
-              stroke="#0ea5e9"
-              strokeDasharray="5 5"
-              strokeWidth={2}
-              dot={false}
-              connectNulls={true}
-            />
+            {showProjection && (
+              <Line
+                type="monotone"
+                dataKey="projectedPoints"
+                name="Geprojecteerde finale punten"
+                stroke="#0ea5e9"
+                strokeDasharray="5 5"
+                strokeWidth={2}
+                dot={false}
+                connectNulls={true}
+              />
+            )}
             <Line
               type="monotone"
               dataKey="xPts"
@@ -3629,6 +3635,7 @@ const teamXppmBoxData = useMemo(
           <TeamPointsVsExpectedCard
             team={team}
             rows={teamPointsVsExpected}
+            showProjection={!seasonComplete}
           />
         </section>
 
