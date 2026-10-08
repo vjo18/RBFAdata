@@ -1821,19 +1821,73 @@ function TeamPlayerImpactComparison({ data, team }) {
 
   const ComparisonCard = ({ title, diff, prob, lo, hi }) => {
     const p = Math.max(0, Math.min(1, Number(prob) || 0.5));
+    const diffNum = Number(diff);
+    const loNum = Number(lo);
+    const hiNum = Number(hi);
+    const validInterval = Number.isFinite(loNum) && Number.isFinite(hiNum);
+    const crossesZero = validInterval && loNum <= 0 && hiNum >= 0;
+    const maxAbs = Math.max(
+      0.001,
+      Math.abs(Number.isFinite(diffNum) ? diffNum : 0),
+      Math.abs(validInterval ? loNum : 0),
+      Math.abs(validInterval ? hiNum : 0)
+    );
+    const toScalePct = (value) =>
+      Math.max(0, Math.min(100, ((Number(value) + maxAbs) / (2 * maxAbs)) * 100));
+    const ciLeft = validInterval ? toScalePct(loNum) : 50;
+    const ciRight = validInterval ? toScalePct(hiNum) : 50;
+    const pointPos = Number.isFinite(diffNum) ? toScalePct(diffNum) : 50;
+
     return (
       <div className="rounded-xl border border-gray-200 p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="text-sm font-semibold">{title}</div>
             <div className="text-2xl font-semibold tabular-nums mt-1">{signed(diff)}</div>
-            <div className="text-xs text-gray-500 mt-1">95%-interval verschil: {range(lo, hi)}</div>
+            <div className="text-xs text-gray-500 mt-1">
+              95%-interval verschil: {range(lo, hi)}
+            </div>
           </div>
           <div className="text-right">
             <div className="text-xs text-gray-500">P({playerA} &gt; {playerB})</div>
             <div className="text-xl font-semibold">{pct(p)}</div>
           </div>
         </div>
+
+        <div className="mt-4">
+          <div className="flex items-center justify-between text-[11px] text-gray-500 mb-1">
+            <span>95%-interval van het verschil</span>
+            <span className={crossesZero ? "font-medium text-amber-700" : "font-medium text-emerald-700"}>
+              {crossesZero ? "kruist 0" : "ligt aan één kant van 0"}
+            </span>
+          </div>
+          <div className="relative h-7 rounded-md bg-slate-50 border border-slate-200">
+            <div
+              className="absolute top-0 bottom-0 w-px bg-slate-500"
+              style={{ left: "50%" }}
+              aria-hidden
+            />
+            {validInterval && (
+              <div
+                className={`absolute top-[9px] h-2 rounded-full ${crossesZero ? "bg-amber-300" : "bg-emerald-300"}`}
+                style={{
+                  left: `${Math.min(ciLeft, ciRight)}%`,
+                  width: `${Math.max(2, Math.abs(ciRight - ciLeft))}%`,
+                }}
+                aria-hidden
+              />
+            )}
+            <div
+              className="absolute top-[6px] h-3 w-3 rounded-full bg-slate-900 ring-2 ring-white"
+              style={{ left: `calc(${pointPos}% - 6px)` }}
+              aria-hidden
+            />
+            <span className="absolute left-1 top-[2px] text-[9px] text-gray-400">{signed(-maxAbs)}</span>
+            <span className="absolute left-1/2 -translate-x-1/2 top-[2px] text-[9px] font-semibold text-gray-600">0</span>
+            <span className="absolute right-1 top-[2px] text-[9px] text-gray-400">{signed(maxAbs)}</span>
+          </div>
+        </div>
+
         <div className="mt-3 h-3 rounded-full bg-gray-100 overflow-hidden flex">
           <div className="bg-emerald-500 h-3" style={{ width: `${(p * 100).toFixed(1)}%` }} />
           <div className="bg-slate-300 h-3" style={{ width: `${((1 - p) * 100).toFixed(1)}%` }} />
@@ -1853,7 +1907,9 @@ function TeamPlayerImpactComparison({ data, team }) {
         <div>
           <h3 className="text-lg font-semibold">Team-impact — onderlinge spelersvergelijking</h3>
           <p className="text-xs text-gray-500 mt-1 max-w-3xl">
-            Vergelijk spelers binnen dezelfde ploeg. De team-impactscore combineert totale,
+            Vergelijk spelers binnen <span className="font-medium">{team}</span>. De Team-impact index
+            loopt van 0–100 en is relatief ten opzichte van ploeggenoten binnen deze ploeg; ze is geen
+            kanspercentage en geen absolute spelersrating. De index combineert totale,
             betrouwbaarheid-gecorrigeerde RAPM- en xPts-impact. Head-to-head kansen komen uit
             dezelfde {meta.bootstrapRuns || 200} volledige wedstrijd-bootstraps.
           </p>
@@ -1876,7 +1932,12 @@ function TeamPlayerImpactComparison({ data, team }) {
               <th className="px-3 py-2 text-left">#</th>
               <th className="px-3 py-2 text-left">Speler</th>
               <th className="px-3 py-2 text-right">Min.</th>
-              <th className="px-3 py-2 text-right">Team-impact</th>
+              <th
+                className="px-3 py-2 text-right"
+                title="Relatieve index van 0–100 binnen de geselecteerde ploeg"
+              >
+                Team-impact index
+              </th>
               <th className="px-3 py-2 text-right">RAPM / 90</th>
               <th className="px-3 py-2 text-right">95%-interval</th>
               <th className="px-3 py-2 text-right">Stab.</th>
@@ -1960,7 +2021,9 @@ function TeamPlayerImpactComparison({ data, team }) {
         )}
 
         <div className="mt-4 text-[11px] leading-relaxed text-gray-500 space-y-1">
+          <p>• Team-impact index = relatieve 0–100 score binnen {team}. Een hogere index betekent een hogere plaats ten opzichte van ploeggenoten, niet een grotere absolute impact tussen ploegen.</p>
           <p>• Een kans van 84% betekent: in 84% van de bootstrap-herberekeningen kwam speler A hoger uit dan speler B.</p>
+          <p>• De verticale 0-lijn in de verschilgrafiek is de nulhypothese: als het 95%-interval die lijn kruist, is de richting van het verschil onzeker.</p>
           <p>• Dit is een modelcontrast, geen causale individuele rating. Spelers die bijna altijd samen spelen zijn moeilijker van elkaar te onderscheiden.</p>
           <p>• Standaard worden alleen spelers met minstens {Math.round(meta.reliableMinutes || 1080)} minuten getoond.</p>
         </div>
