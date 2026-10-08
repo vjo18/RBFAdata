@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   CartesianGrid,
   LabelList,
@@ -205,18 +205,21 @@ function TeamProfileCard({ profile }) {
 }
 
 function OpponentScout({ team, profiles }) {
-  const opponents = profiles.filter((p) => p.team !== team);
-  const [opponent, setOpponent] = useState(opponents[0]?.team || "");
-
-  useEffect(() => {
-    const current = profiles.find((p) => p.team === team);
-    const sorted = opponents
-      .slice()
-      .sort((a, b) => Math.abs(a.points - num(current?.points)) - Math.abs(b.points - num(current?.points)));
-    setOpponent(sorted[0]?.team || opponents[0]?.team || "");
-  }, [team, profiles]);
-
+  const [opponentChoice, setOpponentChoice] = useState("");
+  const opponents = useMemo(
+    () => profiles.filter((p) => p.team !== team),
+    [profiles, team]
+  );
   const own = profiles.find((p) => p.team === team);
+  const defaultOpponent = useMemo(() => {
+    if (!own) return opponents[0]?.team || "";
+    return opponents
+      .slice()
+      .sort((a, b) => Math.abs(a.points - own.points) - Math.abs(b.points - own.points))[0]?.team || "";
+  }, [opponents, own]);
+  const opponent = opponents.some((p) => p.team === opponentChoice)
+    ? opponentChoice
+    : defaultOpponent;
   const opp = profiles.find((p) => p.team === opponent);
   if (!own || !opp) return null;
 
@@ -237,7 +240,7 @@ function OpponentScout({ team, profiles }) {
           <select
             className="block mt-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 min-w-56"
             value={opponent}
-            onChange={(e) => setOpponent(e.target.value)}
+            onChange={(e) => setOpponentChoice(e.target.value)}
           >
             {opponents.map((p) => <option key={p.team} value={p.team}>{p.team}</option>)}
           </select>
@@ -292,7 +295,7 @@ function OpponentScout({ team, profiles }) {
 }
 
 function LeagueLandscape({ profiles, selectedTeam }) {
-  const data = profiles.map((p) => ({
+  const rawData = profiles.map((p) => ({
     team: p.team,
     short: p.team
       .replace(/^K\.?\s*/i, "")
@@ -303,12 +306,22 @@ function LeagueLandscape({ profiles, selectedTeam }) {
     ga: p.ga90,
     points: p.points,
   }));
-  const avgGf = data.reduce((s, r) => s + r.gf, 0) / Math.max(1, data.length);
-  const avgGa = data.reduce((s, r) => s + r.ga, 0) / Math.max(1, data.length);
-  const minGa = Math.max(0, Math.min(...data.map((r) => r.ga)) - 0.15);
-  const maxGa = Math.max(...data.map((r) => r.ga)) + 0.15;
-  const minGf = Math.max(0, Math.min(...data.map((r) => r.gf)) - 0.15);
-  const maxGf = Math.max(...data.map((r) => r.gf)) + 0.15;
+  const gaSorted = rawData.map((r) => r.ga).sort((a, b) => a - b);
+  const secondLargestGa = gaSorted.length > 1 ? gaSorted[gaSorted.length - 2] : gaSorted[0] || 0;
+  const largestGa = gaSorted[gaSorted.length - 1] || 0;
+  const hasGaOutlier = largestGa > Math.max(3, secondLargestGa * 1.5);
+  const gaVisualCap = hasGaOutlier ? secondLargestGa + 0.45 : largestGa + 0.15;
+  const data = rawData.map((r) => ({
+    ...r,
+    gaPlot: Math.min(r.ga, gaVisualCap),
+    short: r.ga > gaVisualCap ? `${r.short}*` : r.short,
+  }));
+  const avgGf = rawData.reduce((s, r) => s + r.gf, 0) / Math.max(1, rawData.length);
+  const avgGa = rawData.reduce((s, r) => s + r.ga, 0) / Math.max(1, rawData.length);
+  const minGa = Math.max(0, Math.min(...rawData.map((r) => r.ga)) - 0.15);
+  const maxGa = gaVisualCap;
+  const minGf = Math.max(0, Math.min(...rawData.map((r) => r.gf)) - 0.15);
+  const maxGf = Math.max(...rawData.map((r) => r.gf)) + 0.15;
 
   return (
     <div className="rounded-2xl bg-white shadow-sm ring-1 ring-black/5 overflow-hidden">
@@ -330,7 +343,7 @@ function LeagueLandscape({ profiles, selectedTeam }) {
             />
             <YAxis
               type="number"
-              dataKey="ga"
+              dataKey="gaPlot"
               name="Goals tegen / match"
               domain={[maxGa, minGa]}
               tickFormatter={(v) => Number(v).toFixed(1)}
@@ -352,7 +365,7 @@ function LeagueLandscape({ profiles, selectedTeam }) {
               }}
             />
             <ReferenceLine x={avgGf} stroke="#94a3b8" strokeDasharray="5 5" />
-            <ReferenceLine y={avgGa} stroke="#94a3b8" strokeDasharray="5 5" />
+            <ReferenceLine y={Math.min(avgGa, gaVisualCap)} stroke="#94a3b8" strokeDasharray="5 5" />
             <Scatter data={data.filter((r) => r.team !== selectedTeam)} fill="#94a3b8">
               <LabelList dataKey="short" position="top" fontSize={9} />
             </Scatter>
@@ -362,6 +375,11 @@ function LeagueLandscape({ profiles, selectedTeam }) {
           </ScatterChart>
         </ResponsiveContainer>
       </div>
+      {hasGaOutlier && (
+        <div className="px-4 pb-3 text-[11px] text-gray-500">
+          * Extreme defensieve outlier visueel afgekapt zodat de overige ploegen leesbaar blijven; de tooltip toont de echte waarde.
+        </div>
+      )}
     </div>
   );
 }
